@@ -1,0 +1,4 @@
+dtoverlay=ads1115,addr=0x48
+dtparam=cha_enable,cha_gain=0
+dtparam=chb_enable,chb_gain=0
+
