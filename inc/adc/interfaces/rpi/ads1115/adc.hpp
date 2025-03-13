@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <tuple>
 
-namespace adc::rpi::ads1x15
+namespace adc::rpi::ads1115
 {
 
 using config_t = std::tuple<uint32_t, uint32_t, std::shared_ptr<logs::LogIf>>;
@@ -25,4 +25,4 @@ class Adc : public AdcIf
     std::unique_ptr<Handler> handler;
 };
 
-} // namespace adc::rpi::ads1x15
+} // namespace adc::rpi::ads1115

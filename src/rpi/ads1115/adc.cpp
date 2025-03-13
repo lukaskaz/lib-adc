@@ -1,11 +1,11 @@
-#include "adc/interfaces/rpi/ads1x15/adc.hpp"
+#include "adc/interfaces/rpi/ads1115/adc.hpp"
 
 #include "sysfs/interfaces/linux/sysfs.hpp"
 
 #include <chrono>
 #include <source_location>
 
-namespace adc::rpi::ads1x15
+namespace adc::rpi::ads1115
 {
 
 using namespace sysfs::lnx;
@@ -19,7 +19,7 @@ struct Adc::Handler
         floatprecision{std::get<1>(config)},
         sysfs{sysfs::Factory::create<Sysfs, configrw_t>({"adc", logif})}
     {
-        log(logs::level::info, "Created adc ads1x15 [channel/precision]: " +
+        log(logs::level::info, "Created adc ads1115 [channel/precision]: " +
                                    std::to_string(channel) + "/" +
                                    std::to_string(floatprecision));
     }
@@ -27,7 +27,7 @@ struct Adc::Handler
     ~Handler()
     {
         log(logs::level::info,
-            "Removed adc ads1x15/channel num: " + std::to_string(channel));
+            "Removed adc ads1115/channel num: " + std::to_string(channel));
     }
 
     bool read(double& val) const
@@ -60,4 +60,4 @@ bool Adc::read(double& val)
     return handler->read(val);
 }
 
-} // namespace adc::rpi::ads1x15
+} // namespace adc::rpi::ads1115

@@ -1,4 +1,4 @@
-#include "adc/interfaces/rpi/ads1x15/adc.hpp"
+#include "adc/interfaces/rpi/ads1115/adc.hpp"
 #include "logs/interfaces/console/logs.hpp"
 #include "logs/interfaces/group/logs.hpp"
 #include "logs/interfaces/storage/logs.hpp"
@@ -27,7 +27,7 @@ int main(int argc, char** argv)
                 logs::Factory::create<logs::group::Log, logs::group::config_t>(
                     {logconsole, logstorage});
 
-            using namespace adc::rpi::ads1x15;
+            using namespace adc::rpi::ads1115;
             auto adc0 = adc::Factory::create<Adc, config_t>(
                 {channel, precision, logif});
 

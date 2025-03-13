@@ -34,7 +34,7 @@ jobs:
         mkdir build && cd build && cmake -DADD_EXAMPLES=ON .. && make
     - name: Executing example program(s)
       run: |
-        ./build/examples/rpi/ads1x15/prog
+        ./build/examples/rpi/ads1115/prog
 
   test:
     name: Test
