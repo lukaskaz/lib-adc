@@ -91,7 +91,6 @@
 				#size-cells = <0>;
 				reg = <0x48>;
                                 interrupt-parent = <&gpio>;                     
-                                //interrupts = <21 4>; /* IRQ_TYPE_LEVEL_HIGH */
                                 interrupts = <21 8>; /* IRQ_TYPE_LEVEL_LOW  */
                                 pinctrl-0 = <&alert_pin>;                        
                                 pinctrl-names = "default";                      
@@ -120,6 +119,8 @@
 		chd_gain =        <&channel_d>,"ti,gain:0";
 		chd_datarate =    <&channel_d>,"ti,datarate:0";
 		pin_alert =  	  <&ads1115>,"interrupts:0",<&alert_pin>,"brcm,pins:0";	
+		// for pin level use only 4 [IRQ_TYPE_LEVEL_HIGH] or 8 [IRQ_TYPE_LEVEL_LOW]
+		alert_level =  	  <&ads1115>,"interrupts:4";
 	};
 };
 

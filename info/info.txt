@@ -2,7 +2,10 @@ dtoverlay=ads1115,addr=0x48
 dtparam=cha_enable,cha_gain=0
 dtparam=chb_enable,chb_gain=0
 
-dtoverlay=ads1115-irq,addr=0x48,pin_alert=16
+#dtoverlay=ads1115,addr=0x48
+dtoverlay=ads1115-irq,addr=0x48
+dtparam=pin_alert=16,alert_level=4
+#dtparam=pin_alert=16,alert_level=8
 dtparam=cha_enable,cha_gain=1
 #dtparam=chb_enable,chb_gain=1
 
