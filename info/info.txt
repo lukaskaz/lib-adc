@@ -2,3 +2,26 @@ dtoverlay=ads1115,addr=0x48
 dtparam=cha_enable,cha_gain=0
 dtparam=chb_enable,chb_gain=0
 
+dtoverlay=ads1115-irq,addr=0x48,pin_alert=16
+dtparam=cha_enable,cha_gain=1
+#dtparam=chb_enable,chb_gain=1
+
+dtoverlay=adxl345,addr=0x53
+dtdebug=1 # debug device tree via: sudo vclog -m
+
+# Alert pin from ADC1115 indicates that threshold limit was exceeded or
+# thresholds window was entered by adc measured analog voltage value
+
+# On particular configuration alert pin also idicates that conversion from 
+# analog to digital value is done and can be extracted from the adc module
+
+# Add new overlay to Makefile
+# [kernel/linux/arch/arm/boot/dts/overlays/Makefile] or
+# [kernel/linux/arch/arm64/boot/dts/overlays/Makefile]:
+
+ 13         ads1115.dtbo \
+ 14         ads1115-irq.dtbo \
+
+compile dts and copy dtbo to rpi target system @ /boot/overlays/
+./manage_kernel_rpi5.sh build
+
