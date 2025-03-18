@@ -1,5 +1,6 @@
 #include "adc/interfaces/rpi/ads1115/adc.hpp"
 
+#include "shell/interfaces/linux/bash/shell.hpp"
 #include "sysfs/interfaces/linux/sysfs.hpp"
 
 #include <sys/epoll.h>
@@ -70,7 +71,9 @@ struct Adc::Handler : public Observable<AdcData>
                                             (((int32_t)data[1] << 8) & 0xFF00) |
                                             data[0];
                                         auto volt =
-                                            (double)val * 125. / 1000000.;
+                                            std::round(100. * val * 125. /
+                                                       1000000.) /
+                                            100.;
                                         auto perc = (int32_t)std::min(
                                             100L, std::lround(100. * volt /
                                                               maxvalue));
@@ -215,9 +218,10 @@ struct Adc::Handler : public Observable<AdcData>
                         log(logs::level::debug, "Buffering enabled");
                     }
 
-                    auto cmd{"../scripts/setup_trigger.sh " +
-                             std::to_string(trigid)};
-                    std::system(cmd.c_str());
+                    auto triggerpath = std::filesystem::path{
+                        iiodevices / triggeros / "trigger_now"};
+                    shell::Factory::create<shell::lnx::bash::Shell>()->run(
+                        "sudo chmod a+rw " + triggerpath.native());
 
                     return true;
                 }
@@ -271,7 +275,7 @@ struct Adc::Handler : public Observable<AdcData>
 
         double rawval = std::atof(raw.c_str()),
                scaleval = std::atof(scale.c_str());
-        return rawval * scaleval / 1000.;
+        return std::round(100. * rawval * scaleval / 1000.) / 100.;
     }
 
     int32_t getpercent() const

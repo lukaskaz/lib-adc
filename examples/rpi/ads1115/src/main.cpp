@@ -60,10 +60,9 @@ int main(int argc, char** argv)
 
                 auto readingfunc = Observer<adc::AdcData>::create(
                     [](const adc::AdcData& data) {
-                        std::cout << "Cha: " << std::get<0>(data)
-                                  << ", val: " << std::get<1>(data)
-                                  << ", perc: " << std::get<2>(data)
-                                  << std::endl;
+                        std::cout << "Observer of cha: " << std::get<0>(data)
+                                  << " got data val/perc: " << std::get<1>(data)
+                                  << "/" << std::get<2>(data) << std::endl;
                     });
 
                 adc0->observe(0, readingfunc);
