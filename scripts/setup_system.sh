@@ -3,6 +3,7 @@
 DEVICE=$1
 DEVICENODE=/dev/$DEVICE
 SYSFSNODE=/sys/bus/iio/devices/$DEVICE
+TRIGGERSYSFS=/sys/bus/iio/devices/iio_sysfs_trigger
 
 function _log()
 {
@@ -38,6 +39,8 @@ function _setupiiofs()
 	if [ $? -ne 0 ]; then _log ERR "Cannot update $DEVICENODE"; return 1; fi
 	sudo chmod -R a+rw $SYSFSNODE
 	if [ $? -ne 0 ]; then _log ERR "Cannot update $SYSFSNODE"; return 1; fi
+	sudo chmod -R a+rw $TRIGGERSYSFS
+	if [ $? -ne 0 ]; then _log ERR "Cannot update $TRIGGERSYSFS"; return 1; fi
 	return 0;	
 }
 

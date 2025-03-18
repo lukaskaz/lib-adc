@@ -9,13 +9,27 @@
 namespace adc::rpi::ads1115
 {
 
-using config_t = std::tuple<uint32_t, uint32_t, std::shared_ptr<logs::LogIf>>;
+enum class readtype
+{
+    standard,
+    event_limit,
+    event_window,
+    trigger_oneshot,
+    trigger_periodic
+};
+
+using config_t = std::tuple<std::string, readtype, uint32_t, double,
+                            std::shared_ptr<logs::LogIf>>;
 
 class Adc : public AdcIf
 {
   public:
     ~Adc();
-    bool read(double&) override;
+    bool observe(uint32_t, std::shared_ptr<Observer<AdcData>>) override;
+    bool unobserve(uint32_t, std::shared_ptr<Observer<AdcData>>) override;
+    bool trigger(uint32_t) override;
+    bool read(uint32_t, double&) override;
+    bool read(uint32_t, int32_t&) override;
 
   private:
     friend class adc::Factory;
