@@ -42,6 +42,9 @@ struct Adc::Handler : public Observable<AdcData>
                     auto devnode = std::filesystem::path{"/dev"} / device;
                     log(logs::level::info, "Iio device monitoring started");
                     auto ifs = fopen(devnode.c_str(), "r");
+                    if (!ifs)
+                        throw std::runtime_error("Cannot open monitored node " +
+                                                 devnode.native());
                     std::vector<uint8_t> data(100);
                     while (!running.stop_requested())
                     {
@@ -88,7 +91,7 @@ struct Adc::Handler : public Observable<AdcData>
             });
         }
 
-        log(logs::level::info, "Created adc ads1115 [dev/cha/max: " + device +
+        log(logs::level::info, "Created adc ads1115 [dev/cha/max]: " + device +
                                    "/" + std::to_string(channel) + "/" +
                                    std::to_string(maxvalue));
     }
@@ -100,8 +103,8 @@ struct Adc::Handler : public Observable<AdcData>
             running.request_stop();
             releasetriggeros();
         }
-        log(logs::level::info, "Removed adc ads1115 dev/cha: " + device + "/" +
-                                   std::to_string(channel));
+        log(logs::level::info, "Removed adc ads1115 [dev/cha]: " + device +
+                                   "/" + std::to_string(channel));
     }
 
     bool observe([[maybe_unused]] uint32_t channel,
