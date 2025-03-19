@@ -18,10 +18,10 @@ int main(int argc, char** argv)
                 (bool)atoi(argv[4]) ? logs::level::debug : logs::level::info;
             auto logconsole = logs::Factory::create<logs::console::Log,
                                                     logs::console::config_t>(
-                {loglvl, logs::tags::hide});
+                {loglvl, logs::time::hide, logs::tags::hide});
             auto logstorage = logs::Factory::create<logs::storage::Log,
                                                     logs::storage::config_t>(
-                {loglvl, logs::tags::show, {}});
+                {loglvl, logs::time::show, logs::tags::show, {}});
             auto logif =
                 logs::Factory::create<logs::group::Log, logs::group::config_t>(
                     {logconsole, logstorage});
@@ -60,9 +60,10 @@ int main(int argc, char** argv)
 
                 auto readingfunc = Observer<adc::AdcData>::create(
                     [](const adc::AdcData& data) {
+                        auto [volt, perc] = std::get<1>(data);
                         std::cout << "Observer of cha: " << std::get<0>(data)
-                                  << " got data val/perc: " << std::get<1>(data)
-                                  << "/" << std::get<2>(data) << std::endl;
+                                  << " got data voltage/percent: " << volt
+                                  << "/" << perc << std::endl;
                     });
 
                 adc0->observe(0, readingfunc);

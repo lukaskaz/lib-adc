@@ -12,6 +12,7 @@
 #include <fstream>
 #include <functional>
 #include <future>
+#include <optional>
 #include <source_location>
 
 namespace adc::rpi::ads1115
@@ -31,7 +32,8 @@ struct Adc::Handler : public Observable<AdcData>
         reading{std::get<1>(config)}, channel{std::get<2>(config)},
         maxvalue{std::get<3>(config)},
         sysfs{sysfs::Factory::create<Sysfs, configrw_t>(
-            {iiodevices / device, logif})}
+            {iiodevices / device, logif})},
+        shell{shell::Factory::create<shell::lnx::bash::Shell>()}
     {
 
         if (reading == readtype::trigger_oneshot)
@@ -41,49 +43,20 @@ struct Adc::Handler : public Observable<AdcData>
                 try
                 {
                     auto devnode = std::filesystem::path{"/dev"} / device;
+                    evelvateperm(devnode, "o", "r");
                     log(logs::level::info, "Iio device monitoring started");
                     auto ifs = fopen(devnode.c_str(), "r");
                     if (!ifs)
-                        throw std::runtime_error("Cannot open monitored node " +
-                                                 devnode.native());
+                        throw std::runtime_error(
+                            "Cannot open node of monitored device: " +
+                            devnode.native());
+                    auto fd = fileno(ifs);
                     std::vector<uint8_t> data(100);
+                    auto timeout = (int32_t)monitorinterval.count();
                     while (!running.stop_requested())
-                    {
-                        auto epollfd = epoll_create1(0);
-                        if (epollfd >= 0)
-                        {
-                            epoll_event event{.events = EPOLLIN,
-                                              .data = {.fd = fileno(ifs)}},
-                                revent{};
-                            epoll_ctl(epollfd, EPOLL_CTL_ADD, fileno(ifs),
-                                      &event);
-                            if (0 <
-                                epoll_wait(epollfd, &revent, 1,
-                                           (int32_t)monitorinterval.count()))
-                            {
-                                if (revent.events & EPOLLIN)
-                                {
-                                    auto ret =
-                                        ::read(fileno(ifs), &data[0], 100);
-                                    if (ret == 2)
-                                    {
-                                        int32_t val =
-                                            (((int32_t)data[1] << 8) & 0xFF00) |
-                                            data[0];
-                                        auto volt =
-                                            std::round(100. * val * 125. /
-                                                       1000000.) /
-                                            100.;
-                                        auto perc = (int32_t)std::min(
-                                            100L, std::lround(100. * volt /
-                                                              maxvalue));
-                                        notify({0, volt, perc});
-                                    }
-                                }
-                            }
-                            close(epollfd);
-                        }
-                    }
+                        if (auto num = getdevdata(fd, data, timeout); num > 0)
+                            if (auto values = extractvalues(num, data))
+                                notifyclients(0, *values);
                     fclose(ifs);
                 }
                 catch (const std::exception& ex)
@@ -113,6 +86,10 @@ struct Adc::Handler : public Observable<AdcData>
     bool observe([[maybe_unused]] uint32_t channel,
                  std::shared_ptr<Observer<AdcData>> obs)
     {
+        std::ostringstream oss;
+        oss << std::hex << obs.get();
+        log(logs::level::debug, "Adding observer "s + oss.str() + " for cha " +
+                                    std::to_string(channel));
         subscribe(obs);
         return true;
     }
@@ -120,23 +97,19 @@ struct Adc::Handler : public Observable<AdcData>
     bool unobserve([[maybe_unused]] uint32_t channel,
                    std::shared_ptr<Observer<AdcData>> obs)
     {
+        std::ostringstream oss;
+        oss << std::hex << obs.get();
+        log(logs::level::debug, "Removing observer "s + oss.str() +
+                                    " for cha " + std::to_string(channel));
         unsubscribe(obs);
         return true;
     }
 
     bool trigger([[maybe_unused]] uint32_t channel) const
     {
-        auto triggeros{"trigger" + std::to_string(trigid)};
-        auto triggerpath =
-            std::filesystem::path{iiodevices / triggeros / "trigger_now"};
-        if (std::ofstream ofs{triggerpath}; ofs.is_open())
-        {
-            static const auto runtriggercmd{1u};
-            ofs << runtriggercmd << std::flush;
-            return true;
-        }
-        throw std::runtime_error("Cannot use one shot trigger: " +
-                                 triggerpath.native());
+        auto runtrigger{"trigger" + std::to_string(trigid) + "/trigger_now"};
+        writefile(iiodevices / "iio_sysfs_trigger" / runtrigger, 1);
+        return true;
     }
 
     bool read(uint32_t channel, double& val)
@@ -162,109 +135,83 @@ struct Adc::Handler : public Observable<AdcData>
     const uint32_t channel;
     const double maxvalue;
     const std::shared_ptr<sysfs::SysfsIf> sysfs;
+    const std::shared_ptr<shell::ShellIf> shell;
     const uint32_t trigid{0};
     std::future<void> async;
     std::stop_source running;
     const std::chrono::milliseconds monitorinterval{100ms};
 
-    bool setuptriggeros()
+    bool setuptriggeros() const
     {
-        if (std::ofstream ofs{iiodevices / "iio_sysfs_trigger/add_trigger"};
-            ofs.is_open())
-        {
-            ofs << trigid << std::flush;
-            auto triggeros{"trigger" + std::to_string(trigid)};
-            if (std::ifstream ifs{iiodevices / triggeros / "name"};
-                ifs.is_open())
-            {
-                std::string triggername;
-                ifs >> triggername;
-                log(logs::level::debug, "One shot trigger[" +
-                                            std::to_string(trigid) +
-                                            "] created: " + triggername);
-
-                if (std::ofstream ofs{iiodevices / device /
-                                      "trigger/current_trigger"};
-                    ofs.is_open())
-                {
-                    ofs << triggername << std::flush;
-                    log(logs::level::debug,
-                        "One shot trigger[" + std::to_string(trigid) + "] " +
-                            triggername + " set for device: " + device);
-
-                    if (std::ofstream ofs{iiodevices / device /
-                                          "buffer/length"};
-                        ofs.is_open())
-                    {
-                        ofs << 100 << std::flush;
-                        log(logs::level::debug, "Buffer length set");
-                    }
-
-                    auto scanned_channel{"in_voltage" +
-                                         std::to_string(channel) + "_en"};
-                    if (std::ofstream ofs{iiodevices / device /
-                                          "scan_elements" / scanned_channel};
-                        ofs.is_open())
-                    {
-                        ofs << 1 << std::flush;
-                        log(logs::level::debug,
-                            "Scan enabled for: " + scanned_channel);
-                    }
-                    if (std::ofstream ofs{iiodevices / device /
-                                          "buffer/enable"};
-                        ofs.is_open())
-                    {
-                        ofs << 1 << std::flush;
-                        log(logs::level::debug, "Buffering enabled");
-                    }
-
-                    auto triggerpath = std::filesystem::path{
-                        iiodevices / triggeros / "trigger_now"};
-                    shell::Factory::create<shell::lnx::bash::Shell>()->run(
-                        "sudo chmod a+rw " + triggerpath.native());
-
-                    return true;
-                }
-            }
-        }
-        return false;
+        writefile(iiodevices / "iio_sysfs_trigger/add_trigger", trigid);
+        auto triggeros{"trigger" + std::to_string(trigid)};
+        std::string triggername;
+        readfile(iiodevices / "iio_sysfs_trigger" / triggeros / "name",
+                 triggername);
+        writefile(iiodevices / device / "trigger/current_trigger", triggername);
+        writefile(iiodevices / device / "buffer/length", 100);
+        auto scanned_item{"in_voltage" + std::to_string(channel) + "_en"};
+        writefile(iiodevices / device / "scan_elements" / scanned_item, 1);
+        writefile(iiodevices / device / "buffer/enable", 1);
+        return true;
     }
 
-    bool releasetriggeros()
+    bool releasetriggeros() const
     {
-        if (std::ofstream ofs{iiodevices / device / "buffer/length"};
-            ofs.is_open())
-        {
-            ofs << 0 << std::flush;
-            log(logs::level::debug, "Buffer length reset");
-        }
+        writefile(iiodevices / device / "buffer/length", 0);
+        auto scanned_item{"in_voltage" + std::to_string(channel) + "_en"};
+        writefile(iiodevices / device / "scan_elements" / scanned_item, 0);
+        writefile(iiodevices / device / "buffer/enable", 0);
+        writefile(iiodevices / "iio_sysfs_trigger/remove_trigger", trigid);
+        return true;
+    }
 
-        auto scanned_channel{"in_voltage" + std::to_string(channel) + "_en"};
-        if (std::ofstream ofs{iiodevices / device / "scan_elements" /
-                              scanned_channel};
-            ofs.is_open())
+    ssize_t getdevdata(int32_t devfd, std::vector<uint8_t>& data,
+                       int32_t waittimems) const
+    {
+        ssize_t readbytes{};
+        auto epollfd = epoll_create1(0);
+        if (epollfd >= 0)
         {
-            ofs << 0 << std::flush;
-            log(logs::level::debug, "Scan disabled for: " + scanned_channel);
+            epoll_event event{.events = EPOLLIN, .data = {.fd = devfd}},
+                revent{};
+            epoll_ctl(epollfd, EPOLL_CTL_ADD, devfd, &event);
+            if (0 < epoll_wait(epollfd, &revent, 1, waittimems))
+                if (revent.events & EPOLLIN)
+                {
+                    readbytes = ::read(devfd, &data[0], data.size());
+                    log(logs::level::debug,
+                        "Received bytes num: " + std::to_string(readbytes));
+                }
+            close(epollfd);
         }
+        return readbytes;
+    }
 
-        if (std::ofstream ofs{iiodevices / device / "buffer/enable"};
-            ofs.is_open())
-        {
-            ofs << 0 << std::flush;
-            log(logs::level::debug, "Buffering disabled");
-        }
-
-        if (std::ofstream ofs{iiodevices / "iio_sysfs_trigger/remove_trigger"};
-            ofs.is_open())
-        {
-            ofs << trigid << std::flush;
+    bool notifyclients(uint32_t channel, const std::pair<double, int32_t> data)
+    {
+        bool ret{};
+        if ((ret = notify({channel, data})))
             log(logs::level::debug,
-                "Trig[" + std::to_string(trigid) + "] removed");
-            return true;
-        }
+                "Cha[" + std::to_string(channel) + "] clients notified");
+        else
+            log(logs::level::warning,
+                "Cha[" + std::to_string(channel) + "] cannot notify clients");
+        return ret;
+    }
 
-        return false;
+    std::optional<std::pair<double, int32_t>>
+        extractvalues(ssize_t readbytes, const std::vector<uint8_t>& data) const
+    {
+        if (readbytes >= 2)
+        {
+            auto val = (((int32_t)data[1] << 8) & 0xFF00) | data[0];
+            auto volt = std::round(100. * val * 125. / 1000000.) / 100.;
+            auto perc =
+                (int32_t)std::min(100L, std::lround(100. * volt / maxvalue));
+            return std::make_pair(volt, perc);
+        }
+        return {};
     }
 
     double getreadout() const
@@ -292,8 +239,59 @@ struct Adc::Handler : public Observable<AdcData>
         return true;
     };
 
-    void log(logs::level level, const std::string& msg,
-             const std::source_location loc = std::source_location::current())
+    bool evelvateperm(const std::filesystem::path& path,
+                      const std::string& owner, const std::string& perm) const
+    {
+        return shell->run("sudo chmod " + owner + "+" + perm + " " +
+                          path.native());
+    }
+
+    bool writefile(const std::filesystem::path& file, const auto& value) const
+    {
+        std::string logvalue;
+        if constexpr (std::is_same<const std::string&, decltype(value)>())
+            logvalue = value;
+        else
+            logvalue = std::to_string(value);
+
+        evelvateperm(file, "o", "w");
+        if (std::ofstream ofs{file}; ofs.is_open())
+        {
+            ofs << value << std::flush;
+
+            log(logs::level::debug,
+                "Value: " + logvalue + " written to file: " + file.native());
+            return true;
+        }
+        log(logs::level::critical,
+            "Cannot write value: " + logvalue + " to file:" + file.native());
+        throw std::runtime_error("Cannot write file " + file.native());
+    }
+
+    bool readfile(const std::filesystem::path& file, auto& value) const
+    {
+        // evelvateperm(file, "o", "r");
+        if (std::ifstream ifs{file}; ifs.is_open())
+        {
+            ifs >> value;
+
+            std::string logvalue;
+            if constexpr (std::is_same<std::string&, decltype(value)>())
+                logvalue = value;
+            else
+                logvalue = std::to_string(value);
+
+            log(logs::level::debug,
+                "Value: " + logvalue + " read from file: " + file.native());
+            return true;
+        }
+        log(logs::level::critical, "Cannot read file:" + file.native());
+        throw std::runtime_error("Cannot read file " + file.native());
+    }
+
+    void log(
+        logs::level level, const std::string& msg,
+        const std::source_location loc = std::source_location::current()) const
     {
         if (logif)
             logif->log(level, std::string{loc.function_name()}, msg);

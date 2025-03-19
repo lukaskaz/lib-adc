@@ -8,7 +8,7 @@
 namespace adc
 {
 
-using AdcData = std::tuple<uint32_t, double, int32_t>;
+using AdcData = std::tuple<uint32_t, std::pair<double, int32_t>>;
 
 class AdcIf
 {
