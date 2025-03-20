@@ -14,6 +14,7 @@ enum class readtype
     standard,
     event_limit,
     event_window,
+    event_dataready,
     trigger_oneshot,
     trigger_periodic
 };

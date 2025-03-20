@@ -1,7 +1,9 @@
 #include "adc/interfaces/rpi/ads1115/adc.hpp"
 
-#include "shell/interfaces/linux/bash/shell.hpp"
+#include "sysfs/helpers.hpp"
 #include "sysfs/interfaces/linux/sysfs.hpp"
+#include "trigger/interfaces/linux/oneshot/trigger.hpp"
+#include "trigger/interfaces/linux/periodic/trigger.hpp"
 
 #include <sys/epoll.h>
 
@@ -18,7 +20,9 @@
 namespace adc::rpi::ads1115
 {
 
+using namespace sysfs;
 using namespace sysfs::lnx;
+using namespace trigger::lnx;
 using namespace std::string_literals;
 using namespace std::chrono_literals;
 
@@ -32,39 +36,24 @@ struct Adc::Handler : public Observable<AdcData>
         reading{std::get<1>(config)}, channel{std::get<2>(config)},
         maxvalue{std::get<3>(config)},
         sysfs{sysfs::Factory::create<Sysfs, configrw_t>(
-            {iiodevices / device, logif})},
-        shell{shell::Factory::create<shell::lnx::bash::Shell>()}
+            {iiodevices / device, logif})}
     {
 
         if (reading == readtype::trigger_oneshot)
         {
-            setuptriggeros();
-            useasync([this, running = running.get_token()]() {
-                try
-                {
-                    auto devnode = std::filesystem::path{"/dev"} / device;
-                    evelvateperm(devnode, "o", "r");
-                    log(logs::level::info, "Iio device monitoring started");
-                    auto ifs = fopen(devnode.c_str(), "r");
-                    if (!ifs)
-                        throw std::runtime_error(
-                            "Cannot open node of monitored device: " +
-                            devnode.native());
-                    auto fd = fileno(ifs);
-                    std::vector<uint8_t> data(100);
-                    auto timeout = (int32_t)monitorinterval.count();
-                    while (!running.stop_requested())
-                        if (auto num = getdevdata(fd, data, timeout); num > 0)
-                            if (auto values = extractvalues(num, data))
-                                notifyclients(0, *values);
-                    fclose(ifs);
-                }
-                catch (const std::exception& ex)
-                {
-                    log(logs::level::error, ex.what());
-                    throw;
-                }
-            });
+            trigger =
+                trigger::Factory::create<oneshot::Trigger, oneshot::config_t>(
+                    {0, logif});
+            setuptrigmon();
+            runtrigmon();
+        }
+        else if (reading == readtype::trigger_periodic)
+        {
+            trigger =
+                trigger::Factory::create<periodic::Trigger, periodic::config_t>(
+                    {0, 0.25, logif});
+            setuptrigmon();
+            runtrigmon();
         }
 
         log(logs::level::info, "Created adc ads1115 [dev/cha/max]: " + device +
@@ -74,10 +63,11 @@ struct Adc::Handler : public Observable<AdcData>
 
     ~Handler()
     {
-        if (reading == readtype::trigger_oneshot)
+        if (reading == readtype::trigger_oneshot ||
+            reading == readtype::trigger_periodic)
         {
             running.request_stop();
-            releasetriggeros();
+            releasetrigmon();
         }
         log(logs::level::info, "Removed adc ads1115 [dev/cha]: " + device +
                                    "/" + std::to_string(channel));
@@ -105,11 +95,9 @@ struct Adc::Handler : public Observable<AdcData>
         return true;
     }
 
-    bool trigger([[maybe_unused]] uint32_t channel) const
+    bool runtrigger([[maybe_unused]] uint32_t channel) const
     {
-        auto runtrigger{"trigger" + std::to_string(trigid) + "/trigger_now"};
-        writefile(iiodevices / "iio_sysfs_trigger" / runtrigger, 1);
-        return true;
+        return trigger->run();
     }
 
     bool read(uint32_t channel, double& val)
@@ -135,35 +123,65 @@ struct Adc::Handler : public Observable<AdcData>
     const uint32_t channel;
     const double maxvalue;
     const std::shared_ptr<sysfs::SysfsIf> sysfs;
-    const std::shared_ptr<shell::ShellIf> shell;
+    std::shared_ptr<trigger::TriggerIf> trigger;
     const uint32_t trigid{0};
     std::future<void> async;
     std::stop_source running;
     const std::chrono::milliseconds monitorinterval{100ms};
 
-    bool setuptriggeros() const
+    bool setuptrigmon()
     {
-        writefile(iiodevices / "iio_sysfs_trigger/add_trigger", trigid);
-        auto triggeros{"trigger" + std::to_string(trigid)};
         std::string triggername;
-        readfile(iiodevices / "iio_sysfs_trigger" / triggeros / "name",
-                 triggername);
-        writefile(iiodevices / device / "trigger/current_trigger", triggername);
-        writefile(iiodevices / device / "buffer/length", 100);
+        trigger->name(triggername);
+        sysfs->elevwrite(iiodevices / device / "trigger/current_trigger",
+                         triggername);
+        sysfs->elevwrite(iiodevices / device / "buffer/length", str(100));
         auto scanned_item{"in_voltage" + std::to_string(channel) + "_en"};
-        writefile(iiodevices / device / "scan_elements" / scanned_item, 1);
-        writefile(iiodevices / device / "buffer/enable", 1);
+        sysfs->elevwrite(iiodevices / device / "scan_elements" / scanned_item,
+                         str(1));
+        sysfs->elevwrite(iiodevices / device / "buffer/enable", str(1));
         return true;
     }
 
-    bool releasetriggeros() const
+    bool releasetrigmon() const
     {
-        writefile(iiodevices / device / "buffer/length", 0);
+        sysfs->elevwrite(iiodevices / device / "trigger/current_trigger", {});
+        sysfs->elevwrite(iiodevices / device / "buffer/length", str(0));
         auto scanned_item{"in_voltage" + std::to_string(channel) + "_en"};
-        writefile(iiodevices / device / "scan_elements" / scanned_item, 0);
-        writefile(iiodevices / device / "buffer/enable", 0);
-        writefile(iiodevices / "iio_sysfs_trigger/remove_trigger", trigid);
+        sysfs->elevwrite(iiodevices / device / "scan_elements" / scanned_item,
+                         str(0));
+        sysfs->elevwrite(iiodevices / device / "buffer/enable", str(0));
         return true;
+    }
+
+    bool runtrigmon()
+    {
+        return useasync([this, running = running.get_token()]() {
+            try
+            {
+                auto devnode = std::filesystem::path{"/dev"} / device;
+                sysfs->elevate(devnode, "o", "r");
+                log(logs::level::info, "Iio device monitoring started");
+                auto ifs = fopen(devnode.c_str(), "r");
+                if (!ifs)
+                    throw std::runtime_error(
+                        "Cannot open node of monitored device: " +
+                        devnode.native());
+                auto fd = fileno(ifs);
+                std::vector<uint8_t> data(100);
+                auto timeout = (int32_t)monitorinterval.count();
+                while (!running.stop_requested())
+                    if (auto num = getdevdata(fd, data, timeout); num > 0)
+                        if (auto values = extractvalues(num, data))
+                            notifyclients(0, *values);
+                fclose(ifs);
+            }
+            catch (const std::exception& ex)
+            {
+                log(logs::level::error, ex.what());
+                throw;
+            }
+        });
     }
 
     ssize_t getdevdata(int32_t devfd, std::vector<uint8_t>& data,
@@ -239,56 +257,6 @@ struct Adc::Handler : public Observable<AdcData>
         return true;
     };
 
-    bool evelvateperm(const std::filesystem::path& path,
-                      const std::string& owner, const std::string& perm) const
-    {
-        return shell->run("sudo chmod " + owner + "+" + perm + " " +
-                          path.native());
-    }
-
-    bool writefile(const std::filesystem::path& file, const auto& value) const
-    {
-        std::string logvalue;
-        if constexpr (std::is_same<const std::string&, decltype(value)>())
-            logvalue = value;
-        else
-            logvalue = std::to_string(value);
-
-        evelvateperm(file, "o", "w");
-        if (std::ofstream ofs{file}; ofs.is_open())
-        {
-            ofs << value << std::flush;
-
-            log(logs::level::debug,
-                "Value: " + logvalue + " written to file: " + file.native());
-            return true;
-        }
-        log(logs::level::critical,
-            "Cannot write value: " + logvalue + " to file:" + file.native());
-        throw std::runtime_error("Cannot write file " + file.native());
-    }
-
-    bool readfile(const std::filesystem::path& file, auto& value) const
-    {
-        // evelvateperm(file, "o", "r");
-        if (std::ifstream ifs{file}; ifs.is_open())
-        {
-            ifs >> value;
-
-            std::string logvalue;
-            if constexpr (std::is_same<std::string&, decltype(value)>())
-                logvalue = value;
-            else
-                logvalue = std::to_string(value);
-
-            log(logs::level::debug,
-                "Value: " + logvalue + " read from file: " + file.native());
-            return true;
-        }
-        log(logs::level::critical, "Cannot read file:" + file.native());
-        throw std::runtime_error("Cannot read file " + file.native());
-    }
-
     void log(
         logs::level level, const std::string& msg,
         const std::source_location loc = std::source_location::current()) const
@@ -314,7 +282,7 @@ bool Adc::unobserve(uint32_t channel, std::shared_ptr<Observer<AdcData>> obs)
 
 bool Adc::trigger(uint32_t channel)
 {
-    return handler->trigger(channel);
+    return handler->runtrigger(channel);
 }
 
 bool Adc::read(uint32_t channel, double& val)

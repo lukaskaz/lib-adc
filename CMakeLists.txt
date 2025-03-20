@@ -19,11 +19,9 @@ include_directories(inc)
 file(GLOB_RECURSE SOURCES "src/*.cpp")
 
 add_library(${PROJECT_NAME} ${SOURCES})
-add_dependencies(${PROJECT_NAME} libshellcmd)
 add_dependencies(${PROJECT_NAME} libsysfs)
 
 target_link_libraries(${PROJECT_NAME}
-    shell
     sysfs
     logger
 )

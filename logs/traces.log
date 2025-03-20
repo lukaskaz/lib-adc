@@ -1,0 +1,88 @@
+Logging started at Thu Mar 20 20:49:11 2025
+[20250320_204911.104317][INFO][adc::rpi::ads1115::Adc::Handler::Handler(const adc::rpi::ads1115::config_t&)] Created adc ads1115 [dev/cha/max]: iio:device1/0/3.300000
+[20250320_204912.572471][DBG ][bool sysfs::lnx::Sysfs::Handler::read(const std::filesystem::__cxx11::path&, std::string&, bool) const] Read[]: '22778' from 'in_voltage0_raw'
+[20250320_204912.572621][DBG ][bool sysfs::lnx::Sysfs::Handler::read(const std::filesystem::__cxx11::path&, std::string&, bool) const] Read[]: '0.125000000' from 'in_voltage0_scale'
+[20250320_204912.572710][DBG ][bool adc::rpi::ads1115::Adc::Handler::read(uint32_t, double&)] Cha[0] value read: 2.850000
+[20250320_204912.573928][DBG ][bool sysfs::lnx::Sysfs::Handler::read(const std::filesystem::__cxx11::path&, std::string&, bool) const] Read[]: '22731' from 'in_voltage0_raw'
+[20250320_204912.574037][DBG ][bool sysfs::lnx::Sysfs::Handler::read(const std::filesystem::__cxx11::path&, std::string&, bool) const] Read[]: '0.125000000' from 'in_voltage0_scale'
+[20250320_204912.574106][DBG ][bool adc::rpi::ads1115::Adc::Handler::read(uint32_t, int32_t&)] Cha[0] percent read: 86
+[20250320_204914.715739][INFO][adc::rpi::ads1115::Adc::Handler::~Handler()] Removed adc ads1115 [dev/cha]: iio:device1/0
+[20250320_204914.726219][DBG ][bool sysfs::lnx::Sysfs::Handler::elevate(const std::filesystem::__cxx11::path&, const std::string&, const std::string&) const] File /sys/bus/iio/devices/iio_sysfs_trigger/add_trigger elevated to: 'o+w'
+[20250320_204914.726474][DBG ][bool sysfs::lnx::Sysfs::Handler::write(const std::filesystem::__cxx11::path&, const std::string&, bool) const] Written[]: '0' to '/sys/bus/iio/devices/iio_sysfs_trigger/add_trigger'
+[20250320_204914.736474][DBG ][bool sysfs::lnx::Sysfs::Handler::elevate(const std::filesystem::__cxx11::path&, const std::string&, const std::string&) const] File /sys/bus/iio/devices/iio_sysfs_trigger/trigger0/name elevated to: 'o+r'
+[20250320_204914.736601][DBG ][bool sysfs::lnx::Sysfs::Handler::read(const std::filesystem::__cxx11::path&, std::string&, bool) const] Read[]: 'sysfstrig0' from '/sys/bus/iio/devices/iio_sysfs_trigger/trigger0/name'
+[20250320_204914.745552][DBG ][bool sysfs::lnx::Sysfs::Handler::elevate(const std::filesystem::__cxx11::path&, const std::string&, const std::string&) const] File /sys/bus/iio/devices/iio_sysfs_trigger/trigger0/trigger_now elevated to: 'o+w'
+[20250320_204914.745645][INFO][trigger::lnx::oneshot::Trigger::Handler::Handler(const trigger::lnx::oneshot::config_t&)] Created oneshot trigger: /sys/bus/iio/devices/iio_sysfs_trigger/trigger0 -> sysfstrig0
+[20250320_204914.754510][DBG ][bool sysfs::lnx::Sysfs::Handler::elevate(const std::filesystem::__cxx11::path&, const std::string&, const std::string&) const] File /sys/bus/iio/devices/iio:device1/trigger/current_trigger elevated to: 'o+w'
+[20250320_204914.754738][DBG ][bool sysfs::lnx::Sysfs::Handler::write(const std::filesystem::__cxx11::path&, const std::string&, bool) const] Written[]: 'sysfstrig0' to '/sys/bus/iio/devices/iio:device1/trigger/current_trigger'
+[20250320_204914.763603][DBG ][bool sysfs::lnx::Sysfs::Handler::elevate(const std::filesystem::__cxx11::path&, const std::string&, const std::string&) const] File /sys/bus/iio/devices/iio:device1/buffer/length elevated to: 'o+w'
+[20250320_204914.763769][DBG ][bool sysfs::lnx::Sysfs::Handler::write(const std::filesystem::__cxx11::path&, const std::string&, bool) const] Written[]: '100' to '/sys/bus/iio/devices/iio:device1/buffer/length'
+[20250320_204914.772696][DBG ][bool sysfs::lnx::Sysfs::Handler::elevate(const std::filesystem::__cxx11::path&, const std::string&, const std::string&) const] File /sys/bus/iio/devices/iio:device1/scan_elements/in_voltage0_en elevated to: 'o+w'
+[20250320_204914.772890][DBG ][bool sysfs::lnx::Sysfs::Handler::write(const std::filesystem::__cxx11::path&, const std::string&, bool) const] Written[]: '1' to '/sys/bus/iio/devices/iio:device1/scan_elements/in_voltage0_en'
+[20250320_204914.781858][DBG ][bool sysfs::lnx::Sysfs::Handler::elevate(const std::filesystem::__cxx11::path&, const std::string&, const std::string&) const] File /sys/bus/iio/devices/iio:device1/buffer/enable elevated to: 'o+w'
+[20250320_204914.782144][DBG ][bool sysfs::lnx::Sysfs::Handler::write(const std::filesystem::__cxx11::path&, const std::string&, bool) const] Written[]: '1' to '/sys/bus/iio/devices/iio:device1/buffer/enable'
+[20250320_204914.782328][INFO][adc::rpi::ads1115::Adc::Handler::Handler(const adc::rpi::ads1115::config_t&)] Created adc ads1115 [dev/cha/max]: iio:device1/0/3.300000
+[20250320_204914.782499][DBG ][bool adc::rpi::ads1115::Adc::Handler::observe(uint32_t, std::shared_ptr<Observer<std::tuple<unsigned int, std::pair<double, int> > > >)] Adding observer 0x55563905b120 for cha 0
+[20250320_204914.791347][DBG ][bool sysfs::lnx::Sysfs::Handler::elevate(const std::filesystem::__cxx11::path&, const std::string&, const std::string&) const] File /dev/iio:device1 elevated to: 'o+r'
+[20250320_204914.791429][INFO][adc::rpi::ads1115::Adc::Handler::runtrigmon()::<lambda()>] Iio device monitoring started
+[20250320_204921.246600][DBG ][bool sysfs::lnx::Sysfs::Handler::write(const std::filesystem::__cxx11::path&, const std::string&, bool) const] Written[]: '1' to '/sys/bus/iio/devices/iio_sysfs_trigger/trigger0/trigger_now'
+[20250320_204921.246770][DBG ][bool trigger::lnx::oneshot::Trigger::Handler::run() const] Trigger sysfstrig0 activated
+[20250320_204921.247619][DBG ][ssize_t adc::rpi::ads1115::Adc::Handler::getdevdata(int32_t, std::vector<unsigned char>&, int32_t) const] Received bytes num: 2
+[20250320_204921.247721][DBG ][bool adc::rpi::ads1115::Adc::Handler::notifyclients(uint32_t, std::pair<double, int>)] Cha[0] clients notified
+[20250320_204921.347067][DBG ][bool adc::rpi::ads1115::Adc::Handler::unobserve(uint32_t, std::shared_ptr<Observer<std::tuple<unsigned int, std::pair<double, int> > > >)] Removing observer 0x55563905b120 for cha 0
+[20250320_204921.347255][DBG ][bool sysfs::lnx::Sysfs::Handler::write(const std::filesystem::__cxx11::path&, const std::string&, bool) const] Written[]: '1' to '/sys/bus/iio/devices/iio_sysfs_trigger/trigger0/trigger_now'
+[20250320_204921.347379][DBG ][bool trigger::lnx::oneshot::Trigger::Handler::run() const] Trigger sysfstrig0 activated
+[20250320_204921.348340][DBG ][ssize_t adc::rpi::ads1115::Adc::Handler::getdevdata(int32_t, std::vector<unsigned char>&, int32_t) const] Received bytes num: 2
+[20250320_204921.348402][WARN][bool adc::rpi::ads1115::Adc::Handler::notifyclients(uint32_t, std::pair<double, int>)] Cha[0] cannot notify clients
+[20250320_204929.036484][DBG ][bool sysfs::lnx::Sysfs::Handler::elevate(const std::filesystem::__cxx11::path&, const std::string&, const std::string&) const] File /sys/bus/iio/devices/iio:device1/trigger/current_trigger elevated to: 'o+w'
+[20250320_204929.036656][DBG ][bool sysfs::lnx::Sysfs::Handler::write(const std::filesystem::__cxx11::path&, const std::string&, bool) const] Written[]: '' to '/sys/bus/iio/devices/iio:device1/trigger/current_trigger'
+[20250320_204929.046488][DBG ][bool sysfs::lnx::Sysfs::Handler::elevate(const std::filesystem::__cxx11::path&, const std::string&, const std::string&) const] File /sys/bus/iio/devices/iio:device1/buffer/length elevated to: 'o+w'
+[20250320_204929.046671][DBG ][bool sysfs::lnx::Sysfs::Handler::write(const std::filesystem::__cxx11::path&, const std::string&, bool) const] Written[]: '0' to '/sys/bus/iio/devices/iio:device1/buffer/length'
+[20250320_204929.056815][DBG ][bool sysfs::lnx::Sysfs::Handler::elevate(const std::filesystem::__cxx11::path&, const std::string&, const std::string&) const] File /sys/bus/iio/devices/iio:device1/scan_elements/in_voltage0_en elevated to: 'o+w'
+[20250320_204929.056968][DBG ][bool sysfs::lnx::Sysfs::Handler::write(const std::filesystem::__cxx11::path&, const std::string&, bool) const] Written[]: '0' to '/sys/bus/iio/devices/iio:device1/scan_elements/in_voltage0_en'
+[20250320_204929.066809][DBG ][bool sysfs::lnx::Sysfs::Handler::elevate(const std::filesystem::__cxx11::path&, const std::string&, const std::string&) const] File /sys/bus/iio/devices/iio:device1/buffer/enable elevated to: 'o+w'
+[20250320_204929.067149][DBG ][bool sysfs::lnx::Sysfs::Handler::write(const std::filesystem::__cxx11::path&, const std::string&, bool) const] Written[]: '0' to '/sys/bus/iio/devices/iio:device1/buffer/enable'
+[20250320_204929.067222][INFO][adc::rpi::ads1115::Adc::Handler::~Handler()] Removed adc ads1115 [dev/cha]: iio:device1/0
+[20250320_204929.076273][DBG ][bool sysfs::lnx::Sysfs::Handler::elevate(const std::filesystem::__cxx11::path&, const std::string&, const std::string&) const] File /sys/bus/iio/devices/iio_sysfs_trigger/remove_trigger elevated to: 'o+w'
+[20250320_204929.076474][DBG ][bool sysfs::lnx::Sysfs::Handler::write(const std::filesystem::__cxx11::path&, const std::string&, bool) const] Written[]: '0' to '/sys/bus/iio/devices/iio_sysfs_trigger/remove_trigger'
+[20250320_204929.076533][INFO][trigger::lnx::oneshot::Trigger::Handler::~Handler()] Removed oneshot trigger: /sys/bus/iio/devices/iio_sysfs_trigger/trigger0 -> sysfstrig0
+[20250320_204929.086955][DBG ][bool sysfs::lnx::Sysfs::Handler::elevate(const std::filesystem::__cxx11::path&, const std::string&, const std::string&) const] File /sys/kernel/config/iio/triggers/hrtimer/ elevated to: 'o+w'
+[20250320_204929.095512][DBG ][bool sysfs::lnx::Sysfs::Handler::elevate(const std::filesystem::__cxx11::path&, const std::string&, const std::string&) const] File /sys/bus/iio/devices/trigger0/name elevated to: 'o+r'
+[20250320_204929.095655][DBG ][bool sysfs::lnx::Sysfs::Handler::read(const std::filesystem::__cxx11::path&, std::string&, bool) const] Read[]: 'cnffstrig0' from '/sys/bus/iio/devices/trigger0/name'
+[20250320_204929.103942][DBG ][bool sysfs::lnx::Sysfs::Handler::elevate(const std::filesystem::__cxx11::path&, const std::string&, const std::string&) const] File /sys/bus/iio/devices/trigger0/sampling_frequency elevated to: 'o+w'
+[20250320_204929.104094][DBG ][bool sysfs::lnx::Sysfs::Handler::write(const std::filesystem::__cxx11::path&, const std::string&, bool) const] Written[]: '0.250000' to '/sys/bus/iio/devices/trigger0/sampling_frequency'
+[20250320_204929.104154][INFO][trigger::lnx::periodic::Trigger::Handler::Handler(const trigger::lnx::periodic::config_t&)] Created periodic trigger: /sys/bus/iio/devices/trigger0 -> cnffstrig0
+[20250320_204929.112642][DBG ][bool sysfs::lnx::Sysfs::Handler::elevate(const std::filesystem::__cxx11::path&, const std::string&, const std::string&) const] File /sys/bus/iio/devices/iio:device1/trigger/current_trigger elevated to: 'o+w'
+[20250320_204929.112868][DBG ][bool sysfs::lnx::Sysfs::Handler::write(const std::filesystem::__cxx11::path&, const std::string&, bool) const] Written[]: 'cnffstrig0' to '/sys/bus/iio/devices/iio:device1/trigger/current_trigger'
+[20250320_204929.121441][DBG ][bool sysfs::lnx::Sysfs::Handler::elevate(const std::filesystem::__cxx11::path&, const std::string&, const std::string&) const] File /sys/bus/iio/devices/iio:device1/buffer/length elevated to: 'o+w'
+[20250320_204929.121592][DBG ][bool sysfs::lnx::Sysfs::Handler::write(const std::filesystem::__cxx11::path&, const std::string&, bool) const] Written[]: '100' to '/sys/bus/iio/devices/iio:device1/buffer/length'
+[20250320_204929.131384][DBG ][bool sysfs::lnx::Sysfs::Handler::elevate(const std::filesystem::__cxx11::path&, const std::string&, const std::string&) const] File /sys/bus/iio/devices/iio:device1/scan_elements/in_voltage0_en elevated to: 'o+w'
+[20250320_204929.131554][DBG ][bool sysfs::lnx::Sysfs::Handler::write(const std::filesystem::__cxx11::path&, const std::string&, bool) const] Written[]: '1' to '/sys/bus/iio/devices/iio:device1/scan_elements/in_voltage0_en'
+[20250320_204929.139774][DBG ][bool sysfs::lnx::Sysfs::Handler::elevate(const std::filesystem::__cxx11::path&, const std::string&, const std::string&) const] File /sys/bus/iio/devices/iio:device1/buffer/enable elevated to: 'o+w'
+[20250320_204929.140087][DBG ][bool sysfs::lnx::Sysfs::Handler::write(const std::filesystem::__cxx11::path&, const std::string&, bool) const] Written[]: '1' to '/sys/bus/iio/devices/iio:device1/buffer/enable'
+[20250320_204929.140299][INFO][adc::rpi::ads1115::Adc::Handler::Handler(const adc::rpi::ads1115::config_t&)] Created adc ads1115 [dev/cha/max]: iio:device1/0/3.300000
+[20250320_204929.140379][DBG ][bool adc::rpi::ads1115::Adc::Handler::observe(uint32_t, std::shared_ptr<Observer<std::tuple<unsigned int, std::pair<double, int> > > >)] Adding observer 0x55563905b120 for cha 0
+[20250320_204929.149647][DBG ][bool sysfs::lnx::Sysfs::Handler::elevate(const std::filesystem::__cxx11::path&, const std::string&, const std::string&) const] File /dev/iio:device1 elevated to: 'o+r'
+[20250320_204929.149737][INFO][adc::rpi::ads1115::Adc::Handler::runtrigmon()::<lambda()>] Iio device monitoring started
+[20250320_204933.141232][DBG ][ssize_t adc::rpi::ads1115::Adc::Handler::getdevdata(int32_t, std::vector<unsigned char>&, int32_t) const] Received bytes num: 2
+[20250320_204933.141337][DBG ][bool adc::rpi::ads1115::Adc::Handler::notifyclients(uint32_t, std::pair<double, int>)] Cha[0] clients notified
+[20250320_204937.141229][DBG ][ssize_t adc::rpi::ads1115::Adc::Handler::getdevdata(int32_t, std::vector<unsigned char>&, int32_t) const] Received bytes num: 2
+[20250320_204937.141335][DBG ][bool adc::rpi::ads1115::Adc::Handler::notifyclients(uint32_t, std::pair<double, int>)] Cha[0] clients notified
+[20250320_204941.141224][DBG ][ssize_t adc::rpi::ads1115::Adc::Handler::getdevdata(int32_t, std::vector<unsigned char>&, int32_t) const] Received bytes num: 2
+[20250320_204941.141324][DBG ][bool adc::rpi::ads1115::Adc::Handler::notifyclients(uint32_t, std::pair<double, int>)] Cha[0] clients notified
+[20250320_204945.141595][DBG ][ssize_t adc::rpi::ads1115::Adc::Handler::getdevdata(int32_t, std::vector<unsigned char>&, int32_t) const] Received bytes num: 2
+[20250320_204945.141923][DBG ][bool adc::rpi::ads1115::Adc::Handler::notifyclients(uint32_t, std::pair<double, int>)] Cha[0] clients notified
+[20250320_204949.141542][DBG ][ssize_t adc::rpi::ads1115::Adc::Handler::getdevdata(int32_t, std::vector<unsigned char>&, int32_t) const] Received bytes num: 2
+[20250320_204949.141780][DBG ][bool adc::rpi::ads1115::Adc::Handler::notifyclients(uint32_t, std::pair<double, int>)] Cha[0] clients notified
+[20250320_204953.141502][DBG ][ssize_t adc::rpi::ads1115::Adc::Handler::getdevdata(int32_t, std::vector<unsigned char>&, int32_t) const] Received bytes num: 2
+[20250320_204953.141743][DBG ][bool adc::rpi::ads1115::Adc::Handler::notifyclients(uint32_t, std::pair<double, int>)] Cha[0] clients notified
+[20250320_204955.157838][DBG ][bool sysfs::lnx::Sysfs::Handler::elevate(const std::filesystem::__cxx11::path&, const std::string&, const std::string&) const] File /sys/bus/iio/devices/iio:device1/trigger/current_trigger elevated to: 'o+w'
+[20250320_204955.158002][DBG ][bool sysfs::lnx::Sysfs::Handler::write(const std::filesystem::__cxx11::path&, const std::string&, bool) const] Written[]: '' to '/sys/bus/iio/devices/iio:device1/trigger/current_trigger'
+[20250320_204955.167336][DBG ][bool sysfs::lnx::Sysfs::Handler::elevate(const std::filesystem::__cxx11::path&, const std::string&, const std::string&) const] File /sys/bus/iio/devices/iio:device1/buffer/length elevated to: 'o+w'
+[20250320_204955.167501][DBG ][bool sysfs::lnx::Sysfs::Handler::write(const std::filesystem::__cxx11::path&, const std::string&, bool) const] Written[]: '0' to '/sys/bus/iio/devices/iio:device1/buffer/length'
+[20250320_204955.176988][DBG ][bool sysfs::lnx::Sysfs::Handler::elevate(const std::filesystem::__cxx11::path&, const std::string&, const std::string&) const] File /sys/bus/iio/devices/iio:device1/scan_elements/in_voltage0_en elevated to: 'o+w'
+[20250320_204955.177169][DBG ][bool sysfs::lnx::Sysfs::Handler::write(const std::filesystem::__cxx11::path&, const std::string&, bool) const] Written[]: '0' to '/sys/bus/iio/devices/iio:device1/scan_elements/in_voltage0_en'
+[20250320_204955.186939][DBG ][bool sysfs::lnx::Sysfs::Handler::elevate(const std::filesystem::__cxx11::path&, const std::string&, const std::string&) const] File /sys/bus/iio/devices/iio:device1/buffer/enable elevated to: 'o+w'
+[20250320_204955.187320][DBG ][bool sysfs::lnx::Sysfs::Handler::write(const std::filesystem::__cxx11::path&, const std::string&, bool) const] Written[]: '0' to '/sys/bus/iio/devices/iio:device1/buffer/enable'
+[20250320_204955.187413][INFO][adc::rpi::ads1115::Adc::Handler::~Handler()] Removed adc ads1115 [dev/cha]: iio:device1/0
+[20250320_204955.244904][INFO][trigger::lnx::periodic::Trigger::Handler::~Handler()] Removed periodic trigger: /sys/bus/iio/devices/trigger0 -> cnffstrig0
