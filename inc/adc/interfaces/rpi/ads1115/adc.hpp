@@ -19,7 +19,7 @@ enum class readtype
     trigger_periodic
 };
 
-using config_t = std::tuple<std::string, readtype, uint32_t, double,
+using config_t = std::tuple<std::string, readtype, uint32_t, double, double,
                             std::shared_ptr<logs::LogIf>>;
 
 class Adc : public AdcIf

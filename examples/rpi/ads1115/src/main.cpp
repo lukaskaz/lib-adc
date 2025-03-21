@@ -9,13 +9,14 @@ int main(int argc, char** argv)
 {
     try
     {
-        if (argc == 5)
+        if (argc == 6)
         {
             auto device = std::string{argv[1]};
             auto channel = (uint32_t)atoi(argv[2]);
             auto maxvalue = (double)atof(argv[3]);
+            auto freq = (double)atof(argv[4]);
             auto loglvl =
-                (bool)atoi(argv[4]) ? logs::level::debug : logs::level::info;
+                (bool)atoi(argv[5]) ? logs::level::debug : logs::level::info;
             auto logconsole = logs::Factory::create<logs::console::Log,
                                                     logs::console::config_t>(
                 {loglvl, logs::time::show, logs::tags::hide});
@@ -31,7 +32,8 @@ int main(int argc, char** argv)
 
                 using namespace adc::rpi::ads1115;
                 auto adc0 = adc::Factory::create<Adc, config_t>(
-                    {device, readtype::standard, channel, maxvalue, logif});
+                    {device, readtype::standard, channel, maxvalue, freq,
+                     logif});
 
                 std::cout << "ADCs initiated\n";
                 std::cout << "To read press [enter]" << std::flush;
@@ -55,7 +57,7 @@ int main(int argc, char** argv)
                     << "Second scenario -> ADCs observed @ one shot trigger\n";
                 using namespace adc::rpi::ads1115;
                 auto adc0 = adc::Factory::create<Adc, config_t>(
-                    {device, readtype::trigger_oneshot, channel, maxvalue,
+                    {device, readtype::trigger_oneshot, channel, maxvalue, freq,
                      logif});
 
                 auto readingfunc = Observer<adc::AdcData>::create(
@@ -89,7 +91,7 @@ int main(int argc, char** argv)
                 using namespace adc::rpi::ads1115;
                 auto adc0 = adc::Factory::create<Adc, config_t>(
                     {device, readtype::trigger_periodic, channel, maxvalue,
-                     logif});
+                     freq, logif});
 
                 auto readingfunc = Observer<adc::AdcData>::create(
                     [](const adc::AdcData& data) {

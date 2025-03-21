@@ -32,9 +32,9 @@ struct Adc::Handler : public Observable<AdcData>
 {
   public:
     explicit Handler(const config_t& config) :
-        logif{std::get<4>(config)}, device{std::get<0>(config)},
+        logif{std::get<5>(config)}, device{std::get<0>(config)},
         reading{std::get<1>(config)}, channel{std::get<2>(config)},
-        maxvalue{std::get<3>(config)},
+        maxvalue{std::get<3>(config)}, frequency{std::get<4>(config)},
         sysfs{sysfs::Factory::create<Sysfs, configrw_t>(
             {iiodevices / device, logif})}
     {
@@ -43,7 +43,7 @@ struct Adc::Handler : public Observable<AdcData>
         {
             trigger =
                 trigger::Factory::create<oneshot::Trigger, oneshot::config_t>(
-                    {0, logif});
+                    {logif});
             setuptrigmon();
             runtrigmon();
         }
@@ -51,7 +51,8 @@ struct Adc::Handler : public Observable<AdcData>
         {
             trigger =
                 trigger::Factory::create<periodic::Trigger, periodic::config_t>(
-                    {0, 0.25, logif});
+                    //{0.25, logif});
+                    {frequency, logif});
             setuptrigmon();
             runtrigmon();
         }
@@ -122,6 +123,7 @@ struct Adc::Handler : public Observable<AdcData>
     const readtype reading;
     const uint32_t channel;
     const double maxvalue;
+    const double frequency;
     const std::shared_ptr<sysfs::SysfsIf> sysfs;
     std::shared_ptr<trigger::TriggerIf> trigger;
     const uint32_t trigid{0};
@@ -223,8 +225,10 @@ struct Adc::Handler : public Observable<AdcData>
     {
         if (readbytes >= 2)
         {
-            auto val = (((int32_t)data[1] << 8) & 0xFF00) | data[0];
-            auto volt = std::round(100. * val * 125. / 1000000.) / 100.;
+            auto val = (int16_t)((((int16_t)data[1] << 8) & 0xFF00) | data[0]);
+            auto volt =
+                std::round(100. * std::max(0., (double)val) * 125. / 1000000.) /
+                100.;
             auto perc =
                 (int32_t)std::min(100L, std::lround(100. * volt / maxvalue));
             return std::make_pair(volt, perc);
@@ -238,7 +242,7 @@ struct Adc::Handler : public Observable<AdcData>
         sysfs->read("in_voltage" + std::to_string(channel) + "_raw", raw);
         sysfs->read("in_voltage" + std::to_string(channel) + "_scale", scale);
 
-        double rawval = std::atof(raw.c_str()),
+        double rawval = std::max(0., std::atof(raw.c_str())),
                scaleval = std::atof(scale.c_str());
         return std::round(100. * rawval * scaleval / 1000.) / 100.;
     }

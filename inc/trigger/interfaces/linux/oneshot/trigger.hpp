@@ -8,7 +8,7 @@
 namespace trigger::lnx::oneshot
 {
 
-using config_t = std::tuple<uint32_t, std::shared_ptr<logs::LogIf>>;
+using config_t = std::tuple<std::shared_ptr<logs::LogIf>>;
 
 class Trigger : public TriggerIf
 {

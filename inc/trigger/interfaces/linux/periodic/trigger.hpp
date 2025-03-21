@@ -8,7 +8,7 @@
 namespace trigger::lnx::periodic
 {
 
-using config_t = std::tuple<uint32_t, double, std::shared_ptr<logs::LogIf>>;
+using config_t = std::tuple<double, std::shared_ptr<logs::LogIf>>;
 
 class Trigger : public TriggerIf
 {
