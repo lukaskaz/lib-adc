@@ -2,8 +2,6 @@
 
 #include "sysfs/helpers.hpp"
 #include "sysfs/interfaces/linux/sysfs.hpp"
-#include "trigger/interfaces/linux/oneshot/trigger.hpp"
-#include "trigger/interfaces/linux/periodic/trigger.hpp"
 
 #include <sys/epoll.h>
 
@@ -22,7 +20,6 @@ namespace adc::rpi::ads1115
 
 using namespace sysfs;
 using namespace sysfs::lnx;
-using namespace trigger::lnx;
 using namespace std::string_literals;
 using namespace std::chrono_literals;
 
@@ -34,25 +31,14 @@ struct Adc::Handler : public Observable<AdcData>
     explicit Handler(const config_t& config) :
         logif{std::get<5>(config)}, device{std::get<0>(config)},
         reading{std::get<1>(config)}, channel{std::get<2>(config)},
-        maxvalue{std::get<3>(config)}, frequency{std::get<4>(config)},
+        maxvalue{std::get<3>(config)}, trigger{std::get<4>(config)},
         sysfs{sysfs::Factory::create<Sysfs, configrw_t>(
             {iiodevices / device, logif})}
     {
 
-        if (reading == readtype::trigger_oneshot)
+        if (reading == readtype::trigger_oneshot ||
+            reading == readtype::trigger_periodic)
         {
-            trigger =
-                trigger::Factory::create<oneshot::Trigger, oneshot::config_t>(
-                    {logif});
-            setuptrigmon();
-            runtrigmon();
-        }
-        else if (reading == readtype::trigger_periodic)
-        {
-            trigger =
-                trigger::Factory::create<periodic::Trigger, periodic::config_t>(
-                    //{0.25, logif});
-                    {frequency, logif});
             setuptrigmon();
             runtrigmon();
         }
@@ -123,9 +109,8 @@ struct Adc::Handler : public Observable<AdcData>
     const readtype reading;
     const uint32_t channel;
     const double maxvalue;
-    const double frequency;
-    const std::shared_ptr<sysfs::SysfsIf> sysfs;
     std::shared_ptr<trigger::TriggerIf> trigger;
+    const std::shared_ptr<sysfs::SysfsIf> sysfs;
     const uint32_t trigid{0};
     std::future<void> async;
     std::stop_source running;

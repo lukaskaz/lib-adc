@@ -2,6 +2,7 @@
 
 #include "adc/factory.hpp"
 #include "logs/interfaces/logs.hpp"
+#include "trigger/interfaces/trigger.hpp"
 
 #include <cstdint>
 #include <tuple>
@@ -19,7 +20,8 @@ enum class readtype
     trigger_periodic
 };
 
-using config_t = std::tuple<std::string, readtype, uint32_t, double, double,
+using config_t = std::tuple<std::string, readtype, uint32_t, double,
+                            std::shared_ptr<trigger::TriggerIf>,
                             std::shared_ptr<logs::LogIf>>;
 
 class Adc : public AdcIf

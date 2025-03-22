@@ -2,6 +2,8 @@
 #include "logs/interfaces/console/logs.hpp"
 #include "logs/interfaces/group/logs.hpp"
 #include "logs/interfaces/storage/logs.hpp"
+#include "trigger/interfaces/linux/oneshot/trigger.hpp"
+#include "trigger/interfaces/linux/periodic/trigger.hpp"
 
 #include <iostream>
 
@@ -32,8 +34,7 @@ int main(int argc, char** argv)
 
                 using namespace adc::rpi::ads1115;
                 auto adc0 = adc::Factory::create<Adc, config_t>(
-                    {device, readtype::standard, channel, maxvalue, freq,
-                     logif});
+                    {device, readtype::standard, channel, maxvalue, {}, logif});
 
                 std::cout << "ADCs initiated\n";
                 std::cout << "To read press [enter]" << std::flush;
@@ -55,10 +56,16 @@ int main(int argc, char** argv)
             {
                 std::cout
                     << "Second scenario -> ADCs observed @ one shot trigger\n";
+
+                auto trigger =
+                    trigger::Factory::create<trigger::lnx::oneshot::Trigger,
+                                             trigger::lnx::oneshot::config_t>(
+                        {logif});
+
                 using namespace adc::rpi::ads1115;
                 auto adc0 = adc::Factory::create<Adc, config_t>(
-                    {device, readtype::trigger_oneshot, channel, maxvalue, freq,
-                     logif});
+                    {device, readtype::trigger_oneshot, channel, maxvalue,
+                     trigger, logif});
 
                 auto readingfunc = Observer<adc::AdcData>::create(
                     [](const adc::AdcData& data) {
@@ -88,10 +95,16 @@ int main(int argc, char** argv)
             {
                 std::cout
                     << "Third scenario -> ADCs observed @ periodic trigger\n";
+
+                auto trigger =
+                    trigger::Factory::create<trigger::lnx::periodic::Trigger,
+                                             trigger::lnx::periodic::config_t>(
+                        {freq, logif});
+
                 using namespace adc::rpi::ads1115;
                 auto adc0 = adc::Factory::create<Adc, config_t>(
                     {device, readtype::trigger_periodic, channel, maxvalue,
-                     freq, logif});
+                     trigger, logif});
 
                 auto readingfunc = Observer<adc::AdcData>::create(
                     [](const adc::AdcData& data) {
