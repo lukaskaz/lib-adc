@@ -18,42 +18,43 @@ using namespace sysfs::lnx;
 using namespace std::string_literals;
 using namespace std::chrono_literals;
 
-std::filesystem::path path{"/sys/bus/iio/devices/iio_sysfs_trigger"};
+std::filesystem::path pathiio{"/sys/bus/iio/devices/iio_sysfs_trigger"};
+static const auto triggernameprefix{"sysfstrig"s};
+static const auto triggerdirprefix{"trigger"s};
 
 struct Trigger::Handler
 {
   public:
     explicit Handler(const config_t& config) :
         logif{std::get<0>(config)},
-        sysfs{sysfs::Factory::create<Sysfs, configrw_t>({path, logif})},
-        id{getid()}
+        sysfs{sysfs::Factory::create<Sysfs, configrw_t>({pathiio, logif})},
+        id{getid()}, trigname{triggernameprefix + str(id)}, dirname{create()}
     {
         setup();
         log(logs::level::info,
-            "Created oneshot trigger: " + (path / std::get<0>(names)).native() +
-                " -> " + std::get<1>(names));
+            "Created oneshot trigger: " + (pathiio / dirname).native() +
+                " -> " + trigname);
     }
 
     ~Handler()
     {
         release();
         log(logs::level::info,
-            "Removed oneshot trigger: " + (path / std::get<0>(names)).native() +
-                " -> " + std::get<1>(names));
+            "Removed oneshot trigger: " + (pathiio / dirname).native() +
+                " -> " + trigname);
     }
 
     bool getname(std::string& name) const
     {
-        name = std::get<1>(names);
+        name = trigname;
         return true;
     }
 
     bool run() const
     {
-        if (sysfs->write(path / std::get<0>(names) / "trigger_now", str(1)))
+        if (sysfs->write(pathiio / dirname / "trigger_now", str(1)))
         {
-            log(logs::level::debug,
-                "Trigger " + std::get<1>(names) + " activated");
+            log(logs::level::debug, "Trigger " + trigname + " activated");
             return true;
         }
         return false;
@@ -62,42 +63,50 @@ struct Trigger::Handler
   private:
     const std::shared_ptr<logs::LogIf> logif;
     const std::shared_ptr<sysfs::SysfsIf> sysfs;
+    const int32_t minid{0}, maxid{100};
     const uint32_t id;
-    std::pair<std::string, std::string> names;
+    const std::string trigname;
+    const std::string dirname;
 
-    bool setup()
+    bool setup() const
     {
-        sysfs->elevwrite(path / "add_trigger", str(id));
-        names = getnames();
-        sysfs->elevate(path / std::get<0>(names) / "trigger_now", "o", "w");
-        return true;
+        return sysfs->elevate(pathiio / dirname / "trigger_now", "o", "w");
     }
 
     bool release() const
     {
-        return sysfs->elevwrite(path / "remove_trigger", str(id));
+        return sysfs->elevwrite(pathiio / "remove_trigger", str(id));
+    }
+
+    std::string create() const
+    {
+        sysfs->elevwrite(pathiio / "add_trigger", str(id));
+        return getdirname(pathiio);
     }
 
     uint32_t getid() const
     {
-        std::unordered_set<std::string> present;
+        std::unordered_set<std::string> existing;
         std::ranges::for_each(
-            std::filesystem::directory_iterator(path),
-            [this, &present](const auto& entry) {
+            std::filesystem::directory_iterator(pathiio),
+            [this, &existing](const auto& entry) {
                 if (const auto& dir = entry.path().filename().native();
-                    entry.is_directory() && dir.find("trigger") == 0)
+                    entry.is_directory() && dir.find(triggerdirprefix) == 0)
                 {
-                    present.emplace(dir);
-                    log(logs::level::debug, "Found existing os dir " + dir);
+                    std::string name;
+                    sysfs->elevread(entry.path() / "name", name);
+                    existing.emplace(name);
+                    log(logs::level::debug,
+                        "Found existing os timer " + dir + ":" + name);
                 }
             });
 
-        auto seq = std::views::iota(0, 100);
-        if (auto res = std::ranges::find_if_not(seq,
-                                                [&present](auto id) {
-                                                    return present.contains(
-                                                        "trigger" + str(id));
-                                                });
+        const auto seq = std::views::iota(minid, maxid);
+        if (auto res = std::ranges::find_if_not(
+                seq,
+                [&existing](auto id) {
+                    return existing.contains(triggernameprefix + str(id));
+                });
             res != seq.end())
         {
             log(logs::level::debug,
@@ -108,15 +117,15 @@ struct Trigger::Handler
         throw std::runtime_error("Cannot find available os trigger id");
     }
 
-    std::pair<std::string, std::string> getnames() const
+    std::string getdirname(const std::filesystem::path& path) const
     {
-        std::string fsname, trigname = "sysfstrig" + str(id);
         const auto it = std::filesystem::directory_iterator(path);
         if (auto res = std::ranges::find_if(
                 it,
-                [this, &trigname](const auto& entry) {
+                [this](const auto& entry) {
                     if (entry.is_directory() &&
-                        entry.path().filename().native().find("trigger") == 0)
+                        entry.path().filename().native().find(
+                            triggerdirprefix) == 0)
                     {
                         std::string name;
                         sysfs->elevread(entry.path() / "name", name);
@@ -126,15 +135,13 @@ struct Trigger::Handler
                 });
             res != std::filesystem::end(it))
         {
-            fsname = res->path().filename().native();
+            auto dirname = res->path().filename().native();
             log(logs::level::debug,
-                "Found os trigger names: " + fsname + " -> " + trigname);
-            return {fsname, trigname};
+                "Found os trigger directory name: " + dirname);
+            return dirname;
         }
         else
-        {
             log(logs::level::error, "Cannot find created os trigger");
-        }
         return {};
     }
 

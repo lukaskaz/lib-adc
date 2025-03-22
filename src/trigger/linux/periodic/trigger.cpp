@@ -18,8 +18,11 @@ using namespace sysfs::lnx;
 using namespace std::string_literals;
 using namespace std::chrono_literals;
 
-std::filesystem::path pathcfs{"/sys/kernel/config/iio/triggers/hrtimer/"};
-std::filesystem::path pathiio{"/sys/bus/iio/devices/"};
+static const std::filesystem::path pathcfs{
+    "/sys/kernel/config/iio/triggers/hrtimer/"};
+static const std::filesystem::path pathiio{"/sys/bus/iio/devices/"};
+static const auto cnffstriggerprefix{"cnffstrig"s};
+static const auto sysfstriggerprefix{"trigger"s};
 
 struct Trigger::Handler
 {
@@ -27,26 +30,27 @@ struct Trigger::Handler
     explicit Handler(const config_t& config) :
         logif{std::get<1>(config)},
         sysfs{sysfs::Factory::create<Sysfs, configrw_t>({pathiio, logif})},
-        id{getid()}, freq{std::get<0>(config)}, cnffsname{"cnffstrig" + str(id)}
+        id{getid()}, freq{std::get<0>(config)},
+        trigname{cnffstriggerprefix + str(id)}, dirname{create()}
 
     {
         setup();
-        log(logs::level::info, "Created periodic trigger: " +
-                                   (pathiio / std::get<0>(names)).native() +
-                                   " -> " + std::get<1>(names));
+        log(logs::level::info,
+            "Created periodic trigger: " + (pathiio / dirname).native() +
+                " -> " + trigname);
     }
 
     ~Handler()
     {
         release();
-        log(logs::level::info, "Removed periodic trigger: " +
-                                   (pathiio / std::get<0>(names)).native() +
-                                   " -> " + std::get<1>(names));
+        log(logs::level::info,
+            "Removed periodic trigger: " + (pathiio / dirname).native() +
+                " -> " + trigname);
     }
 
     bool getname(std::string& name) const
     {
-        name = std::get<1>(names);
+        name = trigname;
         return true;
     }
 
@@ -58,46 +62,53 @@ struct Trigger::Handler
   private:
     const std::shared_ptr<logs::LogIf> logif;
     const std::shared_ptr<sysfs::SysfsIf> sysfs;
+    const int32_t minid{0}, maxid{100};
     const uint32_t id;
     const double freq;
-    const std::string cnffsname;
-    std::pair<std::string, std::string> names;
+    const std::string trigname;
+    const std::string dirname;
 
-    bool setup()
+    bool setup() const
     {
-        sysfs->elevate(pathcfs, "o", "w");
-        std::filesystem::create_directories(pathcfs / cnffsname);
-        names = getnames();
-        sysfs->elevwrite(pathiio / std::get<0>(names) / "sampling_frequency",
-                         str(freq));
-        return true;
+        return sysfs->elevwrite(pathiio / dirname / "sampling_frequency",
+                                str(freq));
     }
 
     bool release() const
     {
-        return std::filesystem::remove(pathcfs / cnffsname);
+        return std::filesystem::remove(pathcfs / trigname);
+    }
+
+    std::string create() const
+    {
+        if (sysfs->elevate(pathcfs, "o", "w") &&
+            std::filesystem::create_directories(pathcfs / trigname))
+            return getdirname(pathiio);
+        log(logs::level::critical, "Cannot create trigger " + trigname);
+        return {};
     }
 
     uint32_t getid() const
     {
-        std::unordered_set<std::string> present;
+        std::unordered_set<std::string> existing;
         std::ranges::for_each(
             std::filesystem::directory_iterator(pathcfs),
-            [this, &present](const auto& entry) {
+            [this, &existing](const auto& entry) {
                 if (const auto& dir = entry.path().filename().native();
-                    entry.is_directory() && dir.find("cnffstrig") == 0)
+                    entry.is_directory() && dir.find(cnffstriggerprefix) == 0)
                 {
-                    present.emplace(dir);
-                    log(logs::level::debug, "Found existing hr dir " + dir);
+                    existing.emplace(dir);
+                    log(logs::level::debug,
+                        "Found existing hr timer dir " + dir);
                 }
             });
 
-        auto seq = std::views::iota(0, 100);
-        if (auto res = std::ranges::find_if_not(seq,
-                                                [&present](auto id) {
-                                                    return present.contains(
-                                                        "cnffstrig" + str(id));
-                                                });
+        const auto seq = std::views::iota(minid, maxid);
+        if (auto res = std::ranges::find_if_not(
+                seq,
+                [&existing](auto id) {
+                    return existing.contains(cnffstriggerprefix + str(id));
+                });
             res != seq.end())
         {
             log(logs::level::debug,
@@ -108,33 +119,31 @@ struct Trigger::Handler
         throw std::runtime_error("Cannot find available hr trigger id");
     }
 
-    std::pair<std::string, std::string> getnames() const
+    std::string getdirname(const std::filesystem::path& path) const
     {
-        std::string fsname;
-        const auto it = std::filesystem::directory_iterator(pathiio);
+        const auto it = std::filesystem::directory_iterator{path};
         if (auto res = std::ranges::find_if(
                 it,
                 [this](const auto& entry) {
                     if (entry.is_directory() &&
-                        entry.path().filename().native().find("trigger") == 0)
+                        entry.path().filename().native().find(
+                            sysfstriggerprefix) == 0)
                     {
                         std::string name;
                         sysfs->elevread(entry.path() / "name", name);
-                        return name == cnffsname;
+                        return name == trigname;
                     }
                     return false;
                 });
             res != std::filesystem::end(it))
         {
-            fsname = res->path().filename().native();
+            auto dirname = res->path().filename().native();
             log(logs::level::debug,
-                "Found hr trigger names: " + fsname + " -> " + cnffsname);
-            return {fsname, cnffsname};
+                "Found hr trigger directory name: " + dirname);
+            return dirname;
         }
         else
-        {
             log(logs::level::error, "Cannot find created hr trigger");
-        }
         return {};
     }
 
