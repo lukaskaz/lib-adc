@@ -3,7 +3,10 @@
 #include "sysfs/helpers.hpp"
 #include "sysfs/interfaces/linux/sysfs.hpp"
 
+#include <linux/iio/events.h>
+#include <linux/iio/types.h>
 #include <sys/epoll.h>
+#include <sys/ioctl.h>
 
 #include <algorithm>
 #include <chrono>
@@ -14,6 +17,7 @@
 #include <future>
 #include <optional>
 #include <source_location>
+#include <unordered_map>
 
 namespace adc::rpi::ads1115
 {
@@ -24,60 +28,159 @@ using namespace std::string_literals;
 using namespace std::chrono_literals;
 
 std::filesystem::path iiodevices{"/sys/bus/iio/devices"};
+constexpr uint32_t maxchannels{4};
+constexpr uint32_t triggeredbytes{sizeof(int16_t)};
+constexpr uint32_t eventbytes{sizeof(iio_event_data)};
 
-struct Adc::Handler : public Observable<AdcData>
+static const std::unordered_map<iio_chan_type, std::string> iiochantype = {
+    {IIO_VOLTAGE, "voltage"},
+    {IIO_CURRENT, "current"},
+    {IIO_POWER, "power"},
+    {IIO_ACCEL, "accel"},
+    {IIO_ANGL_VEL, "anglvel"},
+    {IIO_MAGN, "magn"},
+    {IIO_LIGHT, "illuminance"},
+    {IIO_INTENSITY, "intensity"},
+    {IIO_PROXIMITY, "proximity"},
+    {IIO_TEMP, "temp"},
+    {IIO_INCLI, "incli"},
+    {IIO_ROT, "rot"},
+    {IIO_ANGL, "angl"},
+    {IIO_TIMESTAMP, "timestamp"},
+    {IIO_CAPACITANCE, "capacitance"},
+    {IIO_ALTVOLTAGE, "altvoltage"},
+    {IIO_CCT, "cct"},
+    {IIO_PRESSURE, "pressure"},
+    {IIO_HUMIDITYRELATIVE, "humidityrelative"},
+    {IIO_ACTIVITY, "activity"},
+    {IIO_STEPS, "steps"},
+    {IIO_ENERGY, "energy"},
+    {IIO_DISTANCE, "distance"},
+    {IIO_VELOCITY, "velocity"},
+    {IIO_CONCENTRATION, "concentration"},
+    {IIO_RESISTANCE, "resistance"},
+    {IIO_PH, "ph"},
+    {IIO_UVINDEX, "uvindex"},
+    {IIO_GRAVITY, "gravity"},
+    {IIO_POSITIONRELATIVE, "positionrelative"},
+    {IIO_PHASE, "phase"},
+    {IIO_MASSCONCENTRATION, "massconcentration"},
+};
+
+static const std::unordered_map<iio_event_type, std::string> iioevtype = {
+    {IIO_EV_TYPE_THRESH, "thresh"},
+    {IIO_EV_TYPE_MAG, "mag"},
+    {IIO_EV_TYPE_ROC, "roc"},
+    {IIO_EV_TYPE_THRESH_ADAPTIVE, "thresh_adaptive"},
+    {IIO_EV_TYPE_MAG_ADAPTIVE, "mag_adaptive"},
+    {IIO_EV_TYPE_CHANGE, "change"},
+    {IIO_EV_TYPE_MAG_REFERENCED, "mag_referenced"},
+    {IIO_EV_TYPE_GESTURE, "gesture"},
+};
+
+static const std::unordered_map<iio_event_direction, std::string> iioevdir = {
+    {IIO_EV_DIR_EITHER, "either"},       {IIO_EV_DIR_RISING, "rising"},
+    {IIO_EV_DIR_FALLING, "falling"},     {IIO_EV_DIR_SINGLETAP, "singletap"},
+    {IIO_EV_DIR_DOUBLETAP, "doubletap"},
+};
+
+struct Adc::Handler : public helpers::Observable<AdcData>
 {
   public:
     explicit Handler(const config_t& config) :
-        logif{std::get<5>(config)}, device{std::get<0>(config)},
-        reading{std::get<1>(config)}, channel{std::get<2>(config)},
-        maxvalue{std::get<3>(config)}, trigger{std::get<4>(config)},
+        device{std::get<0>(config)}, logif{std::get<5>(config)},
         sysfs{sysfs::Factory::create<Sysfs, configrw_t>(
-            {iiodevices / device, logif})}
+            {iiodevices / device, logif})},
+        trigger{std::get<4>(config)}, reading{std::get<1>(config)},
+        channels{[this](const auto& vect) {
+            std::unordered_map<uint32_t, double> map;
+            std::ranges::for_each(vect, [this, &map](auto ch) {
+                std::string scale;
+                sysfs->read("in_voltage" + str(ch) + "_scale", scale);
+                map.try_emplace(ch, std::atof(scale.c_str()));
+            });
+            return map;
+        }(std::get<2>(config))},
+        maxvalue{std::get<3>(config)}
     {
-
-        if (reading == readtype::trigger_oneshot ||
-            reading == readtype::trigger_periodic)
+        switch (reading)
         {
-            setuptrigmon();
-            runtrigmon();
+            case readtype::standard:
+                break;
+            case readtype::trigger_oneshot:
+                [[fallthrough]];
+            case readtype::trigger_periodic:
+                if (channels.size() == 1)
+                {
+                    triggersetup();
+                    triggermonitoring();
+                }
+                else
+                    throw std::runtime_error("Trigger readout is for single "
+                                             "channel only, requested "
+                                             "channels: " +
+                                             str(channels.size()));
+                break;
+            case readtype::event_dataready:
+                break;
+            case readtype::event_limit:
+                break;
+            case readtype::event_window:
+                eventsetup();
+                eventmonitoring();
+                break;
         }
 
-        log(logs::level::info, "Created adc ads1115 [dev/cha/max]: " + device +
-                                   "/" + std::to_string(channel) + "/" +
-                                   std::to_string(maxvalue));
+        log(logs::level::info, "Created adc ads1115 [dev/mode/cha/max]: " +
+                                   device + "/" + str((int32_t)reading) + "/" +
+                                   str(channels.size()) + "/" + str(maxvalue));
     }
 
     ~Handler()
     {
-        if (reading == readtype::trigger_oneshot ||
-            reading == readtype::trigger_periodic)
+        switch (reading)
         {
-            running.request_stop();
-            releasetrigmon();
+            case readtype::standard:
+                break;
+            case readtype::trigger_oneshot:
+                [[fallthrough]];
+            case readtype::trigger_periodic:
+                running.request_stop();
+                triggerrelease();
+                break;
+            case readtype::event_dataready:
+                break;
+            case readtype::event_limit:
+                break;
+            case readtype::event_window:
+                running.request_stop();
+                eventrelease();
+                break;
         }
-        log(logs::level::info, "Removed adc ads1115 [dev/cha]: " + device +
-                                   "/" + std::to_string(channel));
+
+        log(logs::level::info, "Removed adc ads1115 [dev/mode/cha]: " + device +
+                                   "/" + str((int32_t)reading) + "/" +
+                                   str(channels.size()));
     }
 
     bool observe([[maybe_unused]] uint32_t channel,
-                 std::shared_ptr<Observer<AdcData>> obs)
+                 std::shared_ptr<helpers::Observer<AdcData>> obs)
     {
         std::ostringstream oss;
         oss << std::hex << obs.get();
         log(logs::level::debug, "Adding observer "s + oss.str() + " for cha " +
-                                    std::to_string(channel));
+                                    str(channels.size()));
         subscribe(obs);
         return true;
     }
 
     bool unobserve([[maybe_unused]] uint32_t channel,
-                   std::shared_ptr<Observer<AdcData>> obs)
+                   std::shared_ptr<helpers::Observer<AdcData>> obs)
     {
         std::ostringstream oss;
         oss << std::hex << obs.get();
-        log(logs::level::debug, "Removing observer "s + oss.str() +
-                                    " for cha " + std::to_string(channel));
+        log(logs::level::debug,
+            "Removing observer "s + oss.str() + " for cha " + str(channel));
         unsubscribe(obs);
         return true;
     }
@@ -89,66 +192,111 @@ struct Adc::Handler : public Observable<AdcData>
 
     bool read(uint32_t channel, double& val)
     {
-        val = getreadout();
-        log(logs::level::debug, "Cha[" + std::to_string(channel) +
-                                    "] value read: " + std::to_string(val));
+        val = getreadout(channel);
+        log(logs::level::debug,
+            "Cha[" + str(channel) + "] value read: " + str(val));
         return true;
     }
 
     bool read(uint32_t channel, int32_t& perc)
     {
-        perc = getpercent();
-        log(logs::level::debug, "Cha[" + std::to_string(channel) +
-                                    "] percent read: " + std::to_string(perc));
+        perc = getpercent(getreadout(channel));
+        log(logs::level::debug,
+            "Cha[" + str(channel) + "] percent read: " + str(perc));
         return true;
     }
 
   private:
-    const std::shared_ptr<logs::LogIf> logif;
     const std::string device;
-    const readtype reading;
-    const uint32_t channel;
-    const double maxvalue;
-    std::shared_ptr<trigger::TriggerIf> trigger;
+    const std::shared_ptr<logs::LogIf> logif;
     const std::shared_ptr<sysfs::SysfsIf> sysfs;
-    const uint32_t trigid{0};
+    std::shared_ptr<trigger::TriggerIf> trigger;
+    const readtype reading;
+    const std::unordered_map<uint32_t, double> channels;
+    const double maxvalue;
     std::future<void> async;
     std::stop_source running;
     const std::chrono::milliseconds monitorinterval{100ms};
 
-    bool setuptrigmon()
+    bool triggersetup() const
     {
         std::string triggername;
         trigger->name(triggername);
         sysfs->elevwrite(iiodevices / device / "trigger/current_trigger",
                          triggername);
+        bufferenable();
+        return true;
+    }
+
+    bool triggerrelease() const
+    {
+        sysfs->elevwrite(iiodevices / device / "trigger/current_trigger", {});
+        bufferdisable();
+        return true;
+    }
+
+    bool bufferenable() const
+    {
+        std::ranges::for_each(channels, [this](const auto& ch) {
+            auto scanned_item{"in_voltage" + str(ch.first) + "_en"};
+            sysfs->elevwrite(
+                iiodevices / device / "scan_elements" / scanned_item, str(1));
+        });
+        sysfs->elevwrite(iiodevices / device / "scan_elements/in_timestamp_en",
+                         str(0));
         sysfs->elevwrite(iiodevices / device / "buffer/length", str(100));
-        auto scanned_item{"in_voltage" + std::to_string(channel) + "_en"};
-        sysfs->elevwrite(iiodevices / device / "scan_elements" / scanned_item,
-                         str(1));
         sysfs->elevwrite(iiodevices / device / "buffer/enable", str(1));
         return true;
     }
 
-    bool releasetrigmon() const
+    bool bufferdisable() const
     {
-        sysfs->elevwrite(iiodevices / device / "trigger/current_trigger", {});
         sysfs->elevwrite(iiodevices / device / "buffer/length", str(0));
-        auto scanned_item{"in_voltage" + std::to_string(channel) + "_en"};
-        sysfs->elevwrite(iiodevices / device / "scan_elements" / scanned_item,
-                         str(0));
+        std::ranges::for_each(channels, [this](const auto& ch) {
+            auto scanned_item{"in_voltage" + str(ch.first) + "_en"};
+            sysfs->elevwrite(
+                iiodevices / device / "scan_elements" / scanned_item, str(0));
+        });
         sysfs->elevwrite(iiodevices / device / "buffer/enable", str(0));
         return true;
     }
 
-    bool runtrigmon()
+    bool eventsetup() const
+    {
+        sysfs->elevwrite(iiodevices / device /
+                             "events/in_voltage0_thresh_falling_value",
+                         str(5000));
+        sysfs->elevwrite(iiodevices / device /
+                             "events/in_voltage0_thresh_rising_value",
+                         str(10000));
+        sysfs->elevwrite(iiodevices / device /
+                             "events/in_voltage0_thresh_either_en",
+                         str(1));
+        return true;
+    }
+
+    bool eventrelease() const
+    {
+        sysfs->elevwrite(iiodevices / device /
+                             "events/in_voltage0_thresh_falling_value",
+                         str(-32768));
+        sysfs->elevwrite(iiodevices / device /
+                             "events/in_voltage0_thresh_rising_value",
+                         str(32767));
+        sysfs->elevwrite(iiodevices / device /
+                             "events/in_voltage0_thresh_either_en",
+                         str(0));
+        return true;
+    }
+
+    bool triggermonitoring()
     {
         return useasync([this, running = running.get_token()]() {
             try
             {
                 auto devnode = std::filesystem::path{"/dev"} / device;
                 sysfs->elevate(devnode, "o", "r");
-                log(logs::level::info, "Iio device monitoring started");
+                log(logs::level::info, "Trigger monitoring started");
                 auto ifs = fopen(devnode.c_str(), "r");
                 if (!ifs)
                     throw std::runtime_error(
@@ -158,8 +306,8 @@ struct Adc::Handler : public Observable<AdcData>
                 std::vector<uint8_t> data(100);
                 auto timeout = (int32_t)monitorinterval.count();
                 while (!running.stop_requested())
-                    if (auto num = getdevdata(fd, data, timeout); num > 0)
-                        if (auto values = extractvalues(num, data))
+                    if (auto num = getfddata(fd, data, timeout); num > 0)
+                        if (auto values = extractfdvalues(num, data))
                             notifyclients(0, *values);
                 fclose(ifs);
             }
@@ -171,8 +319,40 @@ struct Adc::Handler : public Observable<AdcData>
         });
     }
 
-    ssize_t getdevdata(int32_t devfd, std::vector<uint8_t>& data,
-                       int32_t waittimems) const
+    bool eventmonitoring()
+    {
+        return useasync([this, running = running.get_token()]() {
+            try
+            {
+                auto devnode = std::filesystem::path{"/dev"} / device;
+                sysfs->elevate(devnode, "o", "r");
+                log(logs::level::info, "Event monitoring started");
+                auto ifs = fopen(devnode.c_str(), "r");
+                if (!ifs)
+                    throw std::runtime_error(
+                        "Cannot open node of monitored device: " +
+                        devnode.native());
+                auto fd = fileno(ifs), evfd{-1};
+                ioctl(fd, IIO_GET_EVENT_FD_IOCTL, &evfd);
+
+                iio_event_data event;
+                auto timeout = (int32_t)monitorinterval.count();
+                while (!running.stop_requested())
+                    if (auto num = getevfddata(evfd, event, timeout); num > 0)
+                        if (auto values = extractevfdvalues(num, event))
+                            notifyclients(0, *values);
+                fclose(ifs);
+            }
+            catch (const std::exception& ex)
+            {
+                log(logs::level::error, ex.what());
+                throw;
+            }
+        });
+    }
+
+    ssize_t getfddata(int32_t devfd, std::vector<uint8_t>& data,
+                      int32_t waittimems) const
     {
         ssize_t readbytes{};
         auto epollfd = epoll_create1(0);
@@ -186,7 +366,34 @@ struct Adc::Handler : public Observable<AdcData>
                 {
                     readbytes = ::read(devfd, &data[0], data.size());
                     log(logs::level::debug,
-                        "Received bytes num: " + std::to_string(readbytes));
+                        "Received bytes num: " + str(readbytes));
+                }
+            close(epollfd);
+        }
+        return readbytes;
+    }
+
+    ssize_t getevfddata(int32_t evfd, iio_event_data& iioevent,
+                        int32_t waittimems) const
+    {
+        ssize_t readbytes{};
+        auto epollfd = epoll_create1(0);
+        if (epollfd >= 0)
+        {
+            epoll_event event{.events = EPOLLIN, .data = {.fd = evfd}},
+                revent{};
+            epoll_ctl(epollfd, EPOLL_CTL_ADD, evfd, &event);
+            if (0 < epoll_wait(epollfd, &revent, 1, waittimems))
+                if (revent.events & EPOLLIN)
+                {
+                    readbytes = ::read(evfd, &iioevent, eventbytes);
+                    if (readbytes == eventbytes)
+                        log(logs::level::debug,
+                            "Received iio event, bytes num: " + str(readbytes));
+                    else
+                        log(logs::level::warning,
+                            "Cannot read iio event, sizes: " + str(readbytes) +
+                                "/" + str(eventbytes));
                 }
             close(epollfd);
         }
@@ -198,44 +405,86 @@ struct Adc::Handler : public Observable<AdcData>
         bool ret{};
         if ((ret = notify({channel, data})))
             log(logs::level::debug,
-                "Cha[" + std::to_string(channel) + "] clients notified");
+                "Cha[" + str(channel) + "] clients notified");
         else
             log(logs::level::warning,
-                "Cha[" + std::to_string(channel) + "] cannot notify clients");
+                "Cha[" + str(channel) + "] cannot notify clients");
         return ret;
     }
 
     std::optional<std::pair<double, int32_t>>
-        extractvalues(ssize_t readbytes, const std::vector<uint8_t>& data) const
+        extractfdvalues(ssize_t readbytes,
+                        const std::vector<uint8_t>& data) const
     {
-        if (readbytes >= 2)
+        if (readbytes == triggeredbytes)
         {
-            auto val = (int16_t)((((int16_t)data[1] << 8) & 0xFF00) | data[0]);
-            auto volt =
-                std::round(100. * std::max(0., (double)val) * 125. / 1000000.) /
-                100.;
-            auto perc =
-                (int32_t)std::min(100L, std::lround(100. * volt / maxvalue));
-            return std::make_pair(volt, perc);
+            auto raw = (int16_t)((((int16_t)data[1] << 8) & 0xFF00) | data[0]);
+            auto val = std::max(0., (double)raw),
+                 volt = getvalue(val, channels.at(0), 3);
+            return std::make_pair(volt, getpercent(volt));
         }
         return {};
     }
 
-    double getreadout() const
+    std::optional<std::pair<double, int32_t>>
+        extractevfdvalues(ssize_t readbytes, iio_event_data& event) const
     {
-        std::string raw, scale;
-        sysfs->read("in_voltage" + std::to_string(channel) + "_raw", raw);
-        sysfs->read("in_voltage" + std::to_string(channel) + "_scale", scale);
+        if (readbytes == eventbytes)
+        {
+            auto chtype =
+                (iio_chan_type)IIO_EVENT_CODE_EXTRACT_CHAN_TYPE(event.id);
+            auto evtype = (iio_event_type)IIO_EVENT_CODE_EXTRACT_TYPE(event.id);
+            auto dir =
+                (iio_event_direction)IIO_EVENT_CODE_EXTRACT_DIR(event.id);
 
-        double rawval = std::max(0., std::atof(raw.c_str())),
-               scaleval = std::atof(scale.c_str());
-        return std::round(100. * rawval * scaleval / 1000.) / 100.;
+            if (iiochantype.contains(chtype) && iioevtype.contains(evtype) &&
+                iioevdir.contains(dir))
+                log(logs::level::debug,
+                    "Decoded iio event: " + iiochantype.at(chtype) + "/" +
+                        iioevtype.at(evtype) + "/" + iioevdir.at(dir));
+            else
+                log(logs::level::warning,
+                    "Cannot decode event: " + str(chtype) + "/" + str(evtype) +
+                        "/" + str(dir));
+
+            if (chtype == IIO_VOLTAGE && evtype == IIO_EV_TYPE_THRESH &&
+                dir == IIO_EV_DIR_EITHER)
+            {
+                log(logs::level::debug, "Exposing adc values @ event");
+                auto volt = getreadout(0, 4);
+                return std::make_pair(volt, getpercent(volt));
+            }
+        }
+        return {};
     }
 
-    int32_t getpercent() const
+    double getreadout(uint32_t channel, uint32_t prec = 2) const
     {
-        return (int32_t)std::min(100L,
-                                 std::lround(100. * getreadout() / maxvalue));
+        std::string raw;
+        sysfs->read("in_voltage" + str(channel) + "_raw", raw);
+        return getvalue(std::atof(raw.c_str()), channels.at(channel), prec);
+    }
+
+    double getvalue(double raw, double scale, uint32_t prec) const
+    {
+        raw = std::max(0., raw);
+        auto value = raw * scale / 1000.;
+        auto ratio = helpers::tr::pow(10, prec);
+        auto volt = std::round(ratio * value) / ratio;
+
+        log(logs::level::debug,
+            "Calculated voltage: " + str(raw) + " -> " + str(volt));
+        return volt;
+    }
+
+    int32_t getpercent(double value) const
+    {
+        auto perc =
+            (int32_t)std::min(100L, std::lround(100. * value / maxvalue));
+
+        log(logs::level::debug, "Calculated percent: " + str(value) + " of " +
+                                    str(maxvalue) + " -> " + str(perc));
+        return perc;
     }
 
     bool useasync(std::function<void()>&& func)
@@ -259,12 +508,14 @@ Adc::Adc(const config_t& config) : handler{std::make_unique<Handler>(config)}
 {}
 Adc::~Adc() = default;
 
-bool Adc::observe(uint32_t channel, std::shared_ptr<Observer<AdcData>> obs)
+bool Adc::observe(uint32_t channel,
+                  std::shared_ptr<helpers::Observer<AdcData>> obs)
 {
     return handler->observe(channel, obs);
 }
 
-bool Adc::unobserve(uint32_t channel, std::shared_ptr<Observer<AdcData>> obs)
+bool Adc::unobserve(uint32_t channel,
+                    std::shared_ptr<helpers::Observer<AdcData>> obs)
 {
     return handler->unobserve(channel, obs);
 }

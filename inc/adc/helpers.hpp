@@ -6,6 +6,9 @@
 #include <stdexcept>
 #include <unordered_set>
 
+namespace helpers
+{
+
 template <typename T>
 class Observer
 {
@@ -63,3 +66,23 @@ class Observable
   private:
     std::unordered_set<std::shared_ptr<Observer<T>>> observers;
 };
+
+namespace tr
+{
+// tail recursion variant
+template <class T>
+requires requires(T a)
+{
+    a* a;
+}
+inline auto pow(T base, uint32_t exp, T res = 1) -> T
+{
+    if (!exp)
+        return res;
+    if (!base)
+        return 0;
+    return pow(base, exp - 1, res * base);
+}
+} // namespace tr
+
+} // namespace helpers

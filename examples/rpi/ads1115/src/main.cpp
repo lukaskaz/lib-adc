@@ -33,8 +33,13 @@ int main(int argc, char** argv)
                 std::cout << "First scenario -> ADCs standard read\n";
 
                 using namespace adc::rpi::ads1115;
-                auto adc0 = adc::Factory::create<Adc, config_t>(
-                    {device, readtype::standard, channel, maxvalue, {}, logif});
+                auto adc0 =
+                    adc::Factory::create<Adc, config_t>({device,
+                                                         readtype::standard,
+                                                         {channel},
+                                                         maxvalue,
+                                                         {},
+                                                         logif});
 
                 std::cout << "ADCs initiated\n";
                 std::cout << "To read press [enter]" << std::flush;
@@ -64,10 +69,14 @@ int main(int argc, char** argv)
 
                 using namespace adc::rpi::ads1115;
                 auto adc0 = adc::Factory::create<Adc, config_t>(
-                    {device, readtype::trigger_oneshot, channel, maxvalue,
-                     trigger, logif});
+                    {device,
+                     readtype::trigger_oneshot,
+                     {channel},
+                     maxvalue,
+                     trigger,
+                     logif});
 
-                auto readingfunc = Observer<adc::AdcData>::create(
+                auto readingfunc = helpers::Observer<adc::AdcData>::create(
                     [](const adc::AdcData& data) {
                         auto [volt, perc] = std::get<1>(data);
                         std::cout << "Observer of cha: " << std::get<0>(data)
@@ -103,10 +112,14 @@ int main(int argc, char** argv)
 
                 using namespace adc::rpi::ads1115;
                 auto adc0 = adc::Factory::create<Adc, config_t>(
-                    {device, readtype::trigger_periodic, channel, maxvalue,
-                     trigger, logif});
+                    {device,
+                     readtype::trigger_periodic,
+                     {channel},
+                     maxvalue,
+                     trigger,
+                     logif});
 
-                auto readingfunc = Observer<adc::AdcData>::create(
+                auto readingfunc = helpers::Observer<adc::AdcData>::create(
                     [](const adc::AdcData& data) {
                         auto [volt, perc] = std::get<1>(data);
                         std::cout << "Observer of cha: " << std::get<0>(data)
@@ -121,6 +134,35 @@ int main(int argc, char** argv)
                           << std::flush;
                 getchar();
                 std::cout << "Third scenario DONE -> ADCs released\n";
+            }
+            {
+                std::cout
+                    << "Forth scenario -> ADCs observed @ window events\n";
+
+                using namespace adc::rpi::ads1115;
+                auto adc0 =
+                    adc::Factory::create<Adc, config_t>({device,
+                                                         readtype::event_window,
+                                                         {channel},
+                                                         maxvalue,
+                                                         {},
+                                                         logif});
+
+                std::cout << "ADCs initiated, now... waiting for events\n";
+
+                auto readingfunc = helpers::Observer<adc::AdcData>::create(
+                    [](const adc::AdcData& data) {
+                        auto [volt, perc] = std::get<1>(data);
+                        std::cout << "Observer of cha: " << std::get<0>(data)
+                                  << " got data voltage/percent: " << volt
+                                  << "/" << perc << std::endl;
+                    });
+                adc0->observe(0, readingfunc);
+
+                std::cout << "To exit press [enter]" << std::flush;
+                getchar();
+
+                std::cout << "Forth scenario DONE -> ADCs released\n";
             }
         }
     }

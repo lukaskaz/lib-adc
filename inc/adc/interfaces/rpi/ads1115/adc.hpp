@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <tuple>
+#include <vector>
 
 namespace adc::rpi::ads1115
 {
@@ -20,16 +21,18 @@ enum class readtype
     trigger_periodic
 };
 
-using config_t = std::tuple<std::string, readtype, uint32_t, double,
-                            std::shared_ptr<trigger::TriggerIf>,
+using config_t = std::tuple<std::string, readtype, std::vector<uint32_t>,
+                            double, std::shared_ptr<trigger::TriggerIf>,
                             std::shared_ptr<logs::LogIf>>;
 
 class Adc : public AdcIf
 {
   public:
     ~Adc();
-    bool observe(uint32_t, std::shared_ptr<Observer<AdcData>>) override;
-    bool unobserve(uint32_t, std::shared_ptr<Observer<AdcData>>) override;
+    bool observe(uint32_t,
+                 std::shared_ptr<helpers::Observer<AdcData>>) override;
+    bool unobserve(uint32_t,
+                   std::shared_ptr<helpers::Observer<AdcData>>) override;
     bool trigger(uint32_t) override;
     bool read(uint32_t, double&) override;
     bool read(uint32_t, int32_t&) override;
