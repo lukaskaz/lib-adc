@@ -247,11 +247,13 @@ struct Adc::Handler : public helpers::Observable<AdcData>
 
     bool eventsetup() const
     {
+        auto raw = getraw(2.0);
         auto eventitem{"in_voltage" + str(channel) + "_thresh_falling_value"};
-        sysfs->elevwrite(iiodevices / device / "events" / eventitem, str(5000));
+        sysfs->elevwrite(iiodevices / device / "events" / eventitem, str(raw));
+
+        raw = getraw(2.7);
         eventitem = "in_voltage" + str(channel) + "_thresh_rising_value";
-        sysfs->elevwrite(iiodevices / device / "events" / eventitem,
-                         str(10000));
+        sysfs->elevwrite(iiodevices / device / "events" / eventitem, str(raw));
         eventitem = "in_voltage" + str(channel) + "_thresh_either_en";
         sysfs->elevwrite(iiodevices / device / "events" / eventitem, str(1));
         return true;
@@ -286,10 +288,16 @@ struct Adc::Handler : public helpers::Observable<AdcData>
                 auto fd = fileno(ifs);
                 std::vector<uint8_t> data(100);
                 auto timeout = (int32_t)monitorinterval.count();
+                double previous{};
                 while (!running.stop_requested())
-                    if (auto num = getfddata(fd, data, timeout); num > 0)
-                        if (auto values = extractfdvalues(num, data))
-                            notifyclients(channel, *values);
+                    if (auto num = getdevicedata(fd, data, timeout); num > 0)
+                        if (auto values = extractdevicevalues(num, data))
+                            if (auto current = std::get<double>(*values);
+                                ischanged(current, previous, 0.025))
+                            {
+                                previous = current;
+                                notifyclients(channel, *values);
+                            }
                 fclose(ifs);
             }
             catch (const std::exception& ex)
@@ -318,10 +326,16 @@ struct Adc::Handler : public helpers::Observable<AdcData>
 
                 iio_event_data event;
                 auto timeout = (int32_t)monitorinterval.count();
+                double previous{};
                 while (!running.stop_requested())
-                    if (auto num = getevfddata(evfd, event, timeout); num > 0)
-                        if (auto values = extractevfdvalues(num, event))
-                            notifyclients(channel, *values);
+                    if (auto num = geteventdata(evfd, event, timeout); num > 0)
+                        if (auto values = extracteventvalues(num, event))
+                            if (auto current = std::get<double>(*values);
+                                ischanged(current, previous, 0.025))
+                            {
+                                previous = current;
+                                notifyclients(channel, *values);
+                            }
                 fclose(ifs);
             }
             catch (const std::exception& ex)
@@ -332,50 +346,51 @@ struct Adc::Handler : public helpers::Observable<AdcData>
         });
     }
 
-    ssize_t getfddata(int32_t devfd, std::vector<uint8_t>& data,
-                      int32_t waittimems) const
+    bool ischanged(double first, double second, double deadband)
+    {
+        return std::fabs(first - second) > deadband;
+    }
+
+    ssize_t getdevicedata(int32_t fd, std::vector<uint8_t>& data,
+                          int32_t waittimems) const
     {
         ssize_t readbytes{};
-        auto epollfd = epoll_create1(0);
-        if (epollfd >= 0)
+        if (auto epollfd = epoll_create1(0); epollfd >= 0)
         {
-            epoll_event event{.events = EPOLLIN, .data = {.fd = devfd}},
-                revent{};
-            epoll_ctl(epollfd, EPOLL_CTL_ADD, devfd, &event);
-            if (0 < epoll_wait(epollfd, &revent, 1, waittimems))
-                if (revent.events & EPOLLIN)
-                {
-                    readbytes = ::read(devfd, &data[0], data.size());
-                    log(logs::level::debug,
-                        "Received bytes num: " + str(readbytes));
-                }
+            epoll_event event{.events = EPOLLIN, .data = {.fd = fd}}, revent{};
+            epoll_ctl(epollfd, EPOLL_CTL_ADD, fd, &event);
+            if (0 < epoll_wait(epollfd, &revent, 1, waittimems) &&
+                (revent.events & EPOLLIN))
+            {
+                readbytes = ::read(fd, &data[0], data.size());
+                log(logs::level::debug,
+                    "Received bytes num: " + str(readbytes));
+            }
             close(epollfd);
         }
         return readbytes;
     }
 
-    ssize_t getevfddata(int32_t evfd, iio_event_data& iioevent,
-                        int32_t waittimems) const
+    ssize_t geteventdata(int32_t fd, iio_event_data& iioevent,
+                         int32_t waittimems) const
     {
         ssize_t readbytes{};
-        auto epollfd = epoll_create1(0);
-        if (epollfd >= 0)
+        if (auto epollfd = epoll_create1(0); epollfd >= 0)
         {
-            epoll_event event{.events = EPOLLIN, .data = {.fd = evfd}},
-                revent{};
-            epoll_ctl(epollfd, EPOLL_CTL_ADD, evfd, &event);
-            if (0 < epoll_wait(epollfd, &revent, 1, waittimems))
-                if (revent.events & EPOLLIN)
-                {
-                    readbytes = ::read(evfd, &iioevent, eventbytes);
-                    if (readbytes == eventbytes)
-                        log(logs::level::debug,
-                            "Received iio event, bytes num: " + str(readbytes));
-                    else
-                        log(logs::level::warning,
-                            "Cannot read iio event, sizes: " + str(readbytes) +
-                                "/" + str(eventbytes));
-                }
+            epoll_event event{.events = EPOLLIN, .data = {.fd = fd}}, revent{};
+            epoll_ctl(epollfd, EPOLL_CTL_ADD, fd, &event);
+            if (0 < epoll_wait(epollfd, &revent, 1, waittimems) &&
+                (revent.events & EPOLLIN))
+            {
+                readbytes = ::read(fd, &iioevent, eventbytes);
+                if (readbytes == eventbytes)
+                    log(logs::level::debug,
+                        "Received iio event, bytes num: " + str(readbytes));
+                else
+                    log(logs::level::warning,
+                        "Cannot read iio event, sizes: " + str(readbytes) +
+                            "/" + str(eventbytes));
+            }
             close(epollfd);
         }
         return readbytes;
@@ -394,21 +409,20 @@ struct Adc::Handler : public helpers::Observable<AdcData>
     }
 
     std::optional<std::pair<double, int32_t>>
-        extractfdvalues(ssize_t readbytes,
-                        const std::vector<uint8_t>& data) const
+        extractdevicevalues(ssize_t readbytes,
+                            const std::vector<uint8_t>& data) const
     {
         if (readbytes == triggeredbytes)
         {
             auto raw = (int16_t)((((int16_t)data[1] << 8) & 0xFF00) | data[0]);
-            auto val = std::max(0., (double)raw),
-                 volt = getvalue(val, scale, 3);
+            auto val = std::max(0., (double)raw), volt = getvalue(val, 3);
             return std::make_pair(volt, getpercent(volt));
         }
         return {};
     }
 
     std::optional<std::pair<double, int32_t>>
-        extractevfdvalues(ssize_t readbytes, iio_event_data& event) const
+        extracteventvalues(ssize_t readbytes, iio_event_data& event) const
     {
         if (readbytes == eventbytes)
         {
@@ -443,10 +457,10 @@ struct Adc::Handler : public helpers::Observable<AdcData>
     {
         std::string raw;
         sysfs->read("in_voltage" + str(channel) + "_raw", raw);
-        return getvalue(std::atof(raw.c_str()), scale, prec);
+        return getvalue(std::atof(raw.c_str()), prec);
     }
 
-    double getvalue(double raw, double scale, uint32_t prec) const
+    double getvalue(double raw, uint32_t prec) const
     {
         raw = std::max(0., raw);
         auto value = raw * scale / 1000.;
@@ -466,6 +480,15 @@ struct Adc::Handler : public helpers::Observable<AdcData>
         log(logs::level::debug, "Calculated percent: " + str(value) + " of " +
                                     str(maxvalue) + " -> " + str(perc));
         return perc;
+    }
+
+    int32_t getraw(double volt) const
+    {
+        auto raw = (int32_t)std::round(volt * 1000. / scale);
+
+        log(logs::level::debug,
+            "Calculated raw: " + str(volt) + " -> " + str(raw));
+        return raw;
     }
 
     bool useasync(std::function<void()>&& func)

@@ -64,12 +64,8 @@ int main(int argc, char** argv)
 
                 using namespace adc::rpi::ads1115;
                 auto adc0 = adc::Factory::create<Adc, config_t>(
-                    {device,
-                     readtype::trigger_oneshot,
-                     {channel},
-                     maxvalue,
-                     trigger,
-                     logif});
+                    {device, readtype::trigger_oneshot, channel, maxvalue,
+                     trigger, logif});
 
                 auto readingfunc = helpers::Observer<adc::AdcData>::create(
                     [](const adc::AdcData& data) {
