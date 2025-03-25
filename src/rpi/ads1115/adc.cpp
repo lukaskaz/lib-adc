@@ -92,15 +92,11 @@ struct Adc::Handler : public helpers::Observable<AdcData>
         sysfs{sysfs::Factory::create<Sysfs, configrw_t>(
             {iiodevices / device, logif})},
         trigger{std::get<4>(config)}, reading{std::get<1>(config)},
-        channels{[this](const auto& vect) {
-            std::unordered_map<uint32_t, double> map;
-            std::ranges::for_each(vect, [this, &map](auto ch) {
-                std::string scale;
-                sysfs->read("in_voltage" + str(ch) + "_scale", scale);
-                map.try_emplace(ch, std::atof(scale.c_str()));
-            });
-            return map;
-        }(std::get<2>(config))},
+        channel{std::get<2>(config)}, scale{[this]() {
+            std::string scale;
+            sysfs->read("in_voltage" + str(channel) + "_scale", scale);
+            return std::atof(scale.c_str());
+        }()},
         maxvalue{std::get<3>(config)}
     {
         switch (reading)
@@ -110,16 +106,8 @@ struct Adc::Handler : public helpers::Observable<AdcData>
             case readtype::trigger_oneshot:
                 [[fallthrough]];
             case readtype::trigger_periodic:
-                if (channels.size() == 1)
-                {
-                    triggersetup();
-                    triggermonitoring();
-                }
-                else
-                    throw std::runtime_error("Trigger readout is for single "
-                                             "channel only, requested "
-                                             "channels: " +
-                                             str(channels.size()));
+                triggersetup();
+                triggermonitoring();
                 break;
             case readtype::event_dataready:
                 break;
@@ -133,7 +121,7 @@ struct Adc::Handler : public helpers::Observable<AdcData>
 
         log(logs::level::info, "Created adc ads1115 [dev/mode/cha/max]: " +
                                    device + "/" + str((int32_t)reading) + "/" +
-                                   str(channels.size()) + "/" + str(maxvalue));
+                                   str(channel) + "/" + str(maxvalue));
     }
 
     ~Handler()
@@ -160,27 +148,25 @@ struct Adc::Handler : public helpers::Observable<AdcData>
 
         log(logs::level::info, "Removed adc ads1115 [dev/mode/cha]: " + device +
                                    "/" + str((int32_t)reading) + "/" +
-                                   str(channels.size()));
+                                   str(channel));
     }
 
-    bool observe([[maybe_unused]] uint32_t channel,
-                 std::shared_ptr<helpers::Observer<AdcData>> obs)
+    bool observe(std::shared_ptr<helpers::Observer<AdcData>> obs)
     {
         std::ostringstream oss;
         oss << std::hex << obs.get();
-        log(logs::level::debug, "Adding observer "s + oss.str() + " for cha " +
-                                    str(channels.size()));
+        log(logs::level::debug, "Adding observer " + oss.str() + " for cha " +
+                                    str(channel) + " and notifying client");
         subscribe(obs);
         return true;
     }
 
-    bool unobserve([[maybe_unused]] uint32_t channel,
-                   std::shared_ptr<helpers::Observer<AdcData>> obs)
+    bool unobserve(std::shared_ptr<helpers::Observer<AdcData>> obs)
     {
         std::ostringstream oss;
         oss << std::hex << obs.get();
         log(logs::level::debug,
-            "Removing observer "s + oss.str() + " for cha " + str(channel));
+            "Removing observer " + oss.str() + " for cha " + str(channel));
         unsubscribe(obs);
         return true;
     }
@@ -190,7 +176,7 @@ struct Adc::Handler : public helpers::Observable<AdcData>
         return trigger->run();
     }
 
-    bool read(uint32_t channel, double& val)
+    bool read(double& val)
     {
         val = getreadout(channel);
         log(logs::level::debug,
@@ -198,7 +184,7 @@ struct Adc::Handler : public helpers::Observable<AdcData>
         return true;
     }
 
-    bool read(uint32_t channel, int32_t& perc)
+    bool read(int32_t& perc)
     {
         perc = getpercent(getreadout(channel));
         log(logs::level::debug,
@@ -212,7 +198,8 @@ struct Adc::Handler : public helpers::Observable<AdcData>
     const std::shared_ptr<sysfs::SysfsIf> sysfs;
     std::shared_ptr<trigger::TriggerIf> trigger;
     const readtype reading;
-    const std::unordered_map<uint32_t, double> channels;
+    const uint32_t channel;
+    const double scale;
     const double maxvalue;
     std::future<void> async;
     std::stop_source running;
@@ -230,62 +217,56 @@ struct Adc::Handler : public helpers::Observable<AdcData>
 
     bool triggerrelease() const
     {
-        sysfs->elevwrite(iiodevices / device / "trigger/current_trigger", {});
         bufferdisable();
+        sysfs->elevwrite(iiodevices / device / "trigger/current_trigger", " ");
         return true;
     }
 
     bool bufferenable() const
     {
-        std::ranges::for_each(channels, [this](const auto& ch) {
-            auto scanned_item{"in_voltage" + str(ch.first) + "_en"};
-            sysfs->elevwrite(
-                iiodevices / device / "scan_elements" / scanned_item, str(1));
-        });
+        sysfs->elevwrite(iiodevices / device / "buffer/length", str(100));
+        auto scanned_item{"in_voltage" + str(channel) + "_en"};
+        sysfs->elevwrite(iiodevices / device / "scan_elements" / scanned_item,
+                         str(1));
         sysfs->elevwrite(iiodevices / device / "scan_elements/in_timestamp_en",
                          str(0));
-        sysfs->elevwrite(iiodevices / device / "buffer/length", str(100));
         sysfs->elevwrite(iiodevices / device / "buffer/enable", str(1));
         return true;
     }
 
     bool bufferdisable() const
     {
-        sysfs->elevwrite(iiodevices / device / "buffer/length", str(0));
-        std::ranges::for_each(channels, [this](const auto& ch) {
-            auto scanned_item{"in_voltage" + str(ch.first) + "_en"};
-            sysfs->elevwrite(
-                iiodevices / device / "scan_elements" / scanned_item, str(0));
-        });
         sysfs->elevwrite(iiodevices / device / "buffer/enable", str(0));
+        usleep(100 * 1000);
+        auto scanned_item{"in_voltage" + str(channel) + "_en"};
+        sysfs->elevwrite(iiodevices / device / "scan_elements" / scanned_item,
+                         str(0));
+        sysfs->elevwrite(iiodevices / device / "buffer/length", str(0));
         return true;
     }
 
     bool eventsetup() const
     {
-        sysfs->elevwrite(iiodevices / device /
-                             "events/in_voltage0_thresh_falling_value",
-                         str(5000));
-        sysfs->elevwrite(iiodevices / device /
-                             "events/in_voltage0_thresh_rising_value",
+        auto eventitem{"in_voltage" + str(channel) + "_thresh_falling_value"};
+        sysfs->elevwrite(iiodevices / device / "events" / eventitem, str(5000));
+        eventitem = "in_voltage" + str(channel) + "_thresh_rising_value";
+        sysfs->elevwrite(iiodevices / device / "events" / eventitem,
                          str(10000));
-        sysfs->elevwrite(iiodevices / device /
-                             "events/in_voltage0_thresh_either_en",
-                         str(1));
+        eventitem = "in_voltage" + str(channel) + "_thresh_either_en";
+        sysfs->elevwrite(iiodevices / device / "events" / eventitem, str(1));
         return true;
     }
 
     bool eventrelease() const
     {
-        sysfs->elevwrite(iiodevices / device /
-                             "events/in_voltage0_thresh_falling_value",
+        auto eventitem{"in_voltage" + str(channel) + "_thresh_falling_value"};
+        sysfs->elevwrite(iiodevices / device / "events" / eventitem,
                          str(-32768));
-        sysfs->elevwrite(iiodevices / device /
-                             "events/in_voltage0_thresh_rising_value",
+        eventitem = "in_voltage" + str(channel) + "_thresh_rising_value";
+        sysfs->elevwrite(iiodevices / device / "events" / eventitem,
                          str(32767));
-        sysfs->elevwrite(iiodevices / device /
-                             "events/in_voltage0_thresh_either_en",
-                         str(0));
+        eventitem = "in_voltage" + str(channel) + "_thresh_either_en";
+        sysfs->elevwrite(iiodevices / device / "events" / eventitem, str(0));
         return true;
     }
 
@@ -308,7 +289,7 @@ struct Adc::Handler : public helpers::Observable<AdcData>
                 while (!running.stop_requested())
                     if (auto num = getfddata(fd, data, timeout); num > 0)
                         if (auto values = extractfdvalues(num, data))
-                            notifyclients(0, *values);
+                            notifyclients(channel, *values);
                 fclose(ifs);
             }
             catch (const std::exception& ex)
@@ -340,7 +321,7 @@ struct Adc::Handler : public helpers::Observable<AdcData>
                 while (!running.stop_requested())
                     if (auto num = getevfddata(evfd, event, timeout); num > 0)
                         if (auto values = extractevfdvalues(num, event))
-                            notifyclients(0, *values);
+                            notifyclients(channel, *values);
                 fclose(ifs);
             }
             catch (const std::exception& ex)
@@ -420,7 +401,7 @@ struct Adc::Handler : public helpers::Observable<AdcData>
         {
             auto raw = (int16_t)((((int16_t)data[1] << 8) & 0xFF00) | data[0]);
             auto val = std::max(0., (double)raw),
-                 volt = getvalue(val, channels.at(0), 3);
+                 volt = getvalue(val, scale, 3);
             return std::make_pair(volt, getpercent(volt));
         }
         return {};
@@ -451,7 +432,7 @@ struct Adc::Handler : public helpers::Observable<AdcData>
                 dir == IIO_EV_DIR_EITHER)
             {
                 log(logs::level::debug, "Exposing adc values @ event");
-                auto volt = getreadout(0, 4);
+                auto volt = getreadout(channel, 4);
                 return std::make_pair(volt, getpercent(volt));
             }
         }
@@ -462,7 +443,7 @@ struct Adc::Handler : public helpers::Observable<AdcData>
     {
         std::string raw;
         sysfs->read("in_voltage" + str(channel) + "_raw", raw);
-        return getvalue(std::atof(raw.c_str()), channels.at(channel), prec);
+        return getvalue(std::atof(raw.c_str()), scale, prec);
     }
 
     double getvalue(double raw, double scale, uint32_t prec) const
@@ -508,16 +489,14 @@ Adc::Adc(const config_t& config) : handler{std::make_unique<Handler>(config)}
 {}
 Adc::~Adc() = default;
 
-bool Adc::observe(uint32_t channel,
-                  std::shared_ptr<helpers::Observer<AdcData>> obs)
+bool Adc::observe(std::shared_ptr<helpers::Observer<AdcData>> obs)
 {
-    return handler->observe(channel, obs);
+    return handler->observe(obs);
 }
 
-bool Adc::unobserve(uint32_t channel,
-                    std::shared_ptr<helpers::Observer<AdcData>> obs)
+bool Adc::unobserve(std::shared_ptr<helpers::Observer<AdcData>> obs)
 {
-    return handler->unobserve(channel, obs);
+    return handler->unobserve(obs);
 }
 
 bool Adc::trigger(uint32_t channel)
@@ -525,14 +504,14 @@ bool Adc::trigger(uint32_t channel)
     return handler->runtrigger(channel);
 }
 
-bool Adc::read(uint32_t channel, double& val)
+bool Adc::read(double& val)
 {
-    return handler->read(channel, val);
+    return handler->read(val);
 }
 
-bool Adc::read(uint32_t channel, int32_t& val)
+bool Adc::read(int32_t& val)
 {
-    return handler->read(channel, val);
+    return handler->read(val);
 }
 
 } // namespace adc::rpi::ads1115

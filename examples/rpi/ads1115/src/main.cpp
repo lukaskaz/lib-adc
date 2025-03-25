@@ -33,24 +33,19 @@ int main(int argc, char** argv)
                 std::cout << "First scenario -> ADCs standard read\n";
 
                 using namespace adc::rpi::ads1115;
-                auto adc0 =
-                    adc::Factory::create<Adc, config_t>({device,
-                                                         readtype::standard,
-                                                         {channel},
-                                                         maxvalue,
-                                                         {},
-                                                         logif});
+                auto adc0 = adc::Factory::create<Adc, config_t>(
+                    {device, readtype::standard, channel, maxvalue, {}, logif});
 
                 std::cout << "ADCs initiated\n";
                 std::cout << "To read press [enter]" << std::flush;
                 getchar();
 
                 double value{};
-                adc0->read(0, value);
+                adc0->read(value);
                 std::cout << "ADCs voltage: " << value << "\n";
 
                 int percent{};
-                adc0->read(0, percent);
+                adc0->read(percent);
                 std::cout << "ADCs percent: " << percent << "\n";
 
                 std::cout << "To exit press [enter]" << std::flush;
@@ -84,7 +79,7 @@ int main(int argc, char** argv)
                                   << "/" << perc << std::endl;
                     });
 
-                adc0->observe(0, readingfunc);
+                adc0->observe(readingfunc);
 
                 std::cout << "ADCs initiated, to trigger press [enter]"
                           << std::flush;
@@ -93,7 +88,7 @@ int main(int argc, char** argv)
                 adc0->trigger(0);
                 usleep(100 * 1000);
 
-                adc0->unobserve(0, readingfunc);
+                adc0->unobserve(readingfunc);
                 adc0->trigger(0);
 
                 std::cout << "To exit press [enter]" << std::flush;
@@ -112,12 +107,8 @@ int main(int argc, char** argv)
 
                 using namespace adc::rpi::ads1115;
                 auto adc0 = adc::Factory::create<Adc, config_t>(
-                    {device,
-                     readtype::trigger_periodic,
-                     {channel},
-                     maxvalue,
-                     trigger,
-                     logif});
+                    {device, readtype::trigger_periodic, channel, maxvalue,
+                     trigger, logif});
 
                 auto readingfunc = helpers::Observer<adc::AdcData>::create(
                     [](const adc::AdcData& data) {
@@ -127,7 +118,7 @@ int main(int argc, char** argv)
                                   << "/" << perc << std::endl;
                     });
 
-                adc0->observe(0, readingfunc);
+                adc0->observe(readingfunc);
 
                 std::cout << "ADCs initiated, trigger ongoing, to interrupt "
                              "press [enter]"
@@ -143,7 +134,7 @@ int main(int argc, char** argv)
                 auto adc0 =
                     adc::Factory::create<Adc, config_t>({device,
                                                          readtype::event_window,
-                                                         {channel},
+                                                         channel,
                                                          maxvalue,
                                                          {},
                                                          logif});
@@ -157,7 +148,7 @@ int main(int argc, char** argv)
                                   << " got data voltage/percent: " << volt
                                   << "/" << perc << std::endl;
                     });
-                adc0->observe(0, readingfunc);
+                adc0->observe(readingfunc);
 
                 std::cout << "To exit press [enter]" << std::flush;
                 getchar();
