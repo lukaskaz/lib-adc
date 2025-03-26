@@ -37,10 +37,8 @@ constexpr uint32_t eventbytes{sizeof(iio_event_data)};
 enum class readtype
 {
     standard,
-    event_limit,
-    event_window,
-    event_dataready,
-    trigger
+    trigger,
+    event,
 };
 
 static const std::unordered_map<iio_chan_type, std::string> iiochantype = {
@@ -138,73 +136,71 @@ struct Adc::Handler : public helpers::Observable<AdcData>
         triggersetup();
         triggermonitoring();
 
-        std::string trigname;
-        trigger->name(trigname);
+        std::string name;
+        trigger->name(name);
         log(logs::level::info,
             "Created triggered adc ads1115 [dev/cha/trig/max]: " + device +
-                "/" + str(channel) + "/" + trigname + "/" + str(maxvalue));
+                "/" + str(channel) + "/" + name + "/" + str(maxvalue));
     }
 
-    // explicit Handler(const config_t& config) :
-    //     device{std::get<0>(config)}, logif{std::get<5>(config)},
-    //     sysfs{sysfs::Factory::create<Sysfs, configrw_t>(
-    //         {iiodevices / device, logif})},
-    //     trigger{std::get<4>(config)}, reading{std::get<1>(config)},
-    //     channel{std::get<2>(config)}, scale{[this]() {
-    //         std::string scale;
-    //         sysfs->read("in_voltage" + str(channel) + "_scale", scale);
-    //         return std::atof(scale.c_str());
-    //     }()},
-    //     maxvalue{std::get<3>(config)}
-    // {
-    //     switch (reading)
-    //     {
-    //         case readtype::standard:
-    //             break;
-    //         case readtype::trigger_oneshot:
-    //             [[fallthrough]];
-    //         case readtype::trigger_periodic:
-    //             triggersetup();
-    //             triggermonitoring();
-    //             break;
-    //         case readtype::event_dataready:
-    //             break;
-    //         case readtype::event_limit:
-    //             break;
-    //         case readtype::event_window:
-    //             eventsetup();
-    //             eventmonitoring();
-    //             break;
-    //     }
-
-    //     log(logs::level::info, "Created adc ads1115 [dev/mode/cha/max]: " +
-    //                                device + "/" + str((int32_t)reading) + "/"
-    //                                + str(channel) + "/" + str(maxvalue));
-    // }
+    explicit Handler(const configevt_t& config) :
+        device{std::get<0>(config)}, logif{std::get<4>(config)},
+        sysfs{sysfs::Factory::create<Sysfs, configrw_t>(
+            {iiodevices / device, logif})},
+        channel{std::get<1>(config)}, scale{[this]() {
+            std::string scale;
+            sysfs->read("in_voltage" + str(channel) + "_scale", scale);
+            return std::atof(scale.c_str());
+        }()},
+        maxvalue{std::get<2>(config)}, reading{readtype::event}
+    {
+        auto [fallthd, risethd] = std::get<3>(config);
+        std::string name;
+        if (!fallthd && !risethd)
+        {
+            name = "data ready";
+            eventdatareadysetup();
+        }
+        else if (fallthd && risethd)
+        {
+            name = "window";
+            eventwindowsetup(fallthd, risethd);
+        }
+        else
+        {
+            name = "limit";
+            auto thd = fallthd ? fallthd : risethd;
+            eventlimitsetup(thd);
+        }
+        eventmonitoring();
+        log(logs::level::info,
+            "Created " + name +
+                " events driven adc ads1115 [dev/cha/fall/rise/max]: " +
+                device + "/" + str(channel) + "/" + str(fallthd) + "/" +
+                str(risethd) + "/" + str(maxvalue));
+    }
 
     ~Handler()
     {
+        std::string name;
         switch (reading)
         {
             case readtype::standard:
+                name = "standard";
                 break;
             case readtype::trigger:
+                name = "triggered";
                 running.request_stop();
                 triggerrelease();
                 break;
-            case readtype::event_dataready:
-                break;
-            case readtype::event_limit:
-                break;
-            case readtype::event_window:
+            case readtype::event:
+                name = "events driven";
                 running.request_stop();
                 eventrelease();
                 break;
         }
-
-        log(logs::level::info, "Removed adc ads1115 [dev/mode/cha]: " + device +
-                                   "/" + str((int32_t)reading) + "/" +
-                                   str(channel));
+        log(logs::level::info, "Removed " + name + " adc ads1115 [dev/cha]: " +
+                                   device + "/" + str(channel));
     }
 
     bool observe(std::shared_ptr<helpers::Observer<AdcData>> obs)
@@ -293,7 +289,6 @@ struct Adc::Handler : public helpers::Observable<AdcData>
     bool bufferdisable() const
     {
         sysfs->elevwrite(iiodevices / device / "buffer/enable", str(0));
-        usleep(100 * 1000);
         auto scanned_item{"in_voltage" + str(channel) + "_en"};
         sysfs->elevwrite(iiodevices / device / "scan_elements" / scanned_item,
                          str(0));
@@ -301,30 +296,64 @@ struct Adc::Handler : public helpers::Observable<AdcData>
         return true;
     }
 
-    bool eventsetup() const
+    bool eventwindowsetup(double fallthresh, double risethresh) const
     {
-        auto raw = getraw(2.0);
-        auto eventitem{"in_voltage" + str(channel) + "_thresh_falling_value"};
-        sysfs->elevwrite(iiodevices / device / "events" / eventitem, str(raw));
+        auto fallingvalue{"in_voltage" + str(channel) +
+                          "_thresh_falling_value"};
+        sysfs->elevwrite(iiodevices / device / "events" / fallingvalue,
+                         str(getraw(fallthresh)));
 
-        raw = getraw(2.7);
-        eventitem = "in_voltage" + str(channel) + "_thresh_rising_value";
-        sysfs->elevwrite(iiodevices / device / "events" / eventitem, str(raw));
-        eventitem = "in_voltage" + str(channel) + "_thresh_either_en";
-        sysfs->elevwrite(iiodevices / device / "events" / eventitem, str(1));
+        auto risingvalue{"in_voltage" + str(channel) + "_thresh_rising_value"};
+        sysfs->elevwrite(iiodevices / device / "events" / risingvalue,
+                         str(getraw(risethresh)));
+
+        auto enablevalue{"in_voltage" + str(channel) + "_thresh_either_en"};
+        sysfs->elevwrite(iiodevices / device / "events" / enablevalue, str(1));
+        return true;
+    }
+
+    bool eventdatareadysetup() const
+    {
+        auto fallingvalue{"in_voltage" + str(channel) +
+                          "_thresh_falling_value"};
+        sysfs->elevwrite(iiodevices / device / "events" / fallingvalue,
+                         str(0xFFFF));
+
+        auto risingvalue{"in_voltage" + str(channel) + "_thresh_rising_value"};
+        sysfs->elevwrite(iiodevices / device / "events" / risingvalue,
+                         str(0x0000));
+
+        auto enablevalue{"in_voltage" + str(channel) + "_thresh_either_en"};
+        sysfs->elevwrite(iiodevices / device / "events" / enablevalue, str(1));
+        return true;
+    }
+
+    bool eventlimitsetup(double thresh) const
+    {
+        auto risingvalue{"in_voltage" + str(channel) + "_thresh_rising_value"};
+        sysfs->elevwrite(iiodevices / device / "events" / risingvalue,
+                         str(getraw(thresh)));
+
+        auto enablevalue{"in_voltage" + str(channel) + "_thresh_rising_en"};
+        sysfs->elevwrite(iiodevices / device / "events" / enablevalue, str(1));
         return true;
     }
 
     bool eventrelease() const
     {
-        auto eventitem{"in_voltage" + str(channel) + "_thresh_falling_value"};
-        sysfs->elevwrite(iiodevices / device / "events" / eventitem,
+        auto fallingvalue{"in_voltage" + str(channel) +
+                          "_thresh_falling_value"};
+        sysfs->elevwrite(iiodevices / device / "events" / fallingvalue,
                          str(-32768));
-        eventitem = "in_voltage" + str(channel) + "_thresh_rising_value";
-        sysfs->elevwrite(iiodevices / device / "events" / eventitem,
+        auto risingvalue{"in_voltage" + str(channel) + "_thresh_rising_value"};
+        sysfs->elevwrite(iiodevices / device / "events" / risingvalue,
                          str(32767));
-        eventitem = "in_voltage" + str(channel) + "_thresh_either_en";
-        sysfs->elevwrite(iiodevices / device / "events" / eventitem, str(0));
+
+        auto enablevalue = "in_voltage" + str(channel) + "_thresh_rising_en";
+        sysfs->elevwrite(iiodevices / device / "events" / enablevalue, str(0));
+
+        enablevalue = "in_voltage" + str(channel) + "_thresh_either_en";
+        sysfs->elevwrite(iiodevices / device / "events" / enablevalue, str(0));
         return true;
     }
 
@@ -392,6 +421,7 @@ struct Adc::Handler : public helpers::Observable<AdcData>
                                 previous = current;
                                 notifyclients(channel, *values);
                             }
+                close(evfd);
                 fclose(ifs);
             }
             catch (const std::exception& ex)
@@ -499,7 +529,7 @@ struct Adc::Handler : public helpers::Observable<AdcData>
                         "/" + str(dir));
 
             if (chtype == IIO_VOLTAGE && evtype == IIO_EV_TYPE_THRESH &&
-                dir == IIO_EV_DIR_EITHER)
+                (dir == IIO_EV_DIR_RISING || dir == IIO_EV_DIR_EITHER))
             {
                 log(logs::level::debug, "Exposing adc values @ event");
                 auto volt = getreadout(channel, 4);

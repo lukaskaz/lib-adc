@@ -14,14 +14,11 @@ using configstd_t =
     std::tuple<std::string, uint32_t, double, std::shared_ptr<logs::LogIf>>;
 using configtrig_t = std::tuple<std::string, uint32_t, double, double,
                                 std::shared_ptr<logs::LogIf>>;
-using configevt_t = std::tuple<std::string, uint32_t, double, double, double,
-                               std::shared_ptr<logs::LogIf>>;
-
-using config_t = std::variant<std::monostate, configstd_t, configtrig_t>;
-
-// using config_t = std::tuple<std::string, readtype, uint32_t, double,
-//                             std::shared_ptr<trigger::TriggerIf>,
-//                             std::shared_ptr<logs::LogIf>>;
+using configevt_t =
+    std::tuple<std::string, uint32_t, double, std::tuple<double, double>,
+               std::shared_ptr<logs::LogIf>>;
+using config_t =
+    std::variant<std::monostate, configstd_t, configtrig_t, configevt_t>;
 
 class Adc : public AdcIf
 {
