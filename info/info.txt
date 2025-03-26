@@ -1,0 +1,105 @@
+https://www.raspberrypi.com/documentation/computers/linux_kernel.html#cross-compiling-the-kernel
+https://www.raspberrypi.com/documentation/computers/compute-module.html#device-tree-debugging
+
+dtoverlay=ads1115,addr=0x48
+dtparam=cha_enable,cha_gain=0
+dtparam=chb_enable,chb_gain=0
+
+#dtoverlay=ads1115,addr=0x48
+dtoverlay=ads1115-irq,addr=0x48
+dtparam=pin_alert=16,alert_level=4
+#dtparam=pin_alert=16,alert_level=8
+dtparam=cha_enable,cha_gain=1
+#dtparam=chb_enable,chb_gain=1
+
+dtoverlay=adxl345,addr=0x53
+dtdebug=1 # debug device tree via: sudo vclog -m
+
+# Alert pin from ADC1115 indicates that threshold limit was exceeded or
+# thresholds window was entered by adc measured analog voltage value
+
+# On particular configuration alert pin also idicates that conversion from 
+# analog to digital value is done and can be extracted from the adc module
+
+# Add new overlay to Makefile
+# [kernel/linux/arch/arm/boot/dts/overlays/Makefile] or
+# [kernel/linux/arch/arm64/boot/dts/overlays/Makefile]:
+
+ 13         ads1115.dtbo \
+ 14         ads1115-irq.dtbo \
+
+compile dts and copy dtbo to rpi target system @ /boot/overlays/
+./manage_kernel_rpi5.sh build
+
+
+# Use dynamic config:
+sudo modprobe configs
+
+$ cat /proc/config.gz | gunzip | grep CONFIG_DYNAMIC_DEBUG
+CONFIG_DYNAMIC_DEBUG=y
+CONFIG_DYNAMIC_DEBUG_CORE=y
+
+$ dmesg
+[  663.855965] ads1015 1-0048: [TEST WRN] GETTING ADC RESULT ADS1115
+[  663.855972] ads1015 1-0048: [TEST ERR] GETTING ADC RESULT ADS1115
+
+$ cat /sys/kernel/debug/dynamic_debug/control | grep -i ads
+drivers/media/mc/mc-entity.c:738 [mc]media_pipeline_populate =_ "media pipeline populated, found pads:\n"
+drivers/media/mc/mc-entity.c:671 [mc]media_pipeline_explore_next_link =_ "media pipeline: adding unconnected pads of '%s'\n"
+drivers/iio/adc/ti-ads1015.c:393 [ti_ads1015]ads1015_get_adc_result =_ "[TEST DBG] GETTING ADC RESULT ADS1115\n"
+
+$ echo "file ti-ads1015.c +p" | sudo tee /sys/kernel/debug/dynamic_debug/control
+file ti-ads1015.c +p
+
+$ cat /sys/kernel/debug/dynamic_debug/control | grep -i ads
+drivers/media/mc/mc-entity.c:738 [mc]media_pipeline_populate =_ "media pipeline populated, found pads:\n"
+drivers/media/mc/mc-entity.c:671 [mc]media_pipeline_explore_next_link =_ "media pipeline: adding unconnected pads of '%s'\n"
+drivers/iio/adc/ti-ads1015.c:393 [ti_ads1015]ads1015_get_adc_result =p "[TEST DBG] GETTING ADC RESULT ADS1115\n"
+
+$ dmesg
+[  663.855965] ads1015 1-0048: [TEST WRN] GETTING ADC RESULT ADS1115
+[  663.855972] ads1015 1-0048: [TEST ERR] GETTING ADC RESULT ADS1115
+[  792.917476] ads1015 1-0048: [TEST DBG] GETTING ADC RESULT ADS1115
+[  792.917483] ads1015 1-0048: [TEST WRN] GETTING ADC RESULT ADS1115
+[  792.917486] ads1015 1-0048: [TEST ERR] GETTING ADC RESULT ADS1115
+
+$ echo "file ti-ads1015.c +pmtl" | sudo tee /sys/kernel/debug/dynamic_debug/control
+file ti-ads1015.c +pmtl
+
+$ cat /sys/kernel/debug/dynamic_debug/control | grep -i ads
+drivers/media/mc/mc-entity.c:738 [mc]media_pipeline_populate =_ "media pipeline populated, found pads:\n"
+drivers/media/mc/mc-entity.c:671 [mc]media_pipeline_explore_next_link =_ "media pipeline: adding unconnected pads of '%s'\n"
+drivers/iio/adc/ti-ads1015.c:393 [ti_ads1015]ads1015_get_adc_result =pmlt "[TEST DBG] GETTING ADC RESULT ADS1115\n"
+
+$ dmesg
+[  663.855965] ads1015 1-0048: [TEST WRN] GETTING ADC RESULT ADS1115
+[  663.855972] ads1015 1-0048: [TEST ERR] GETTING ADC RESULT ADS1115
+[  792.917476] ads1015 1-0048: [TEST DBG] GETTING ADC RESULT ADS1115
+[  792.917483] ads1015 1-0048: [TEST WRN] GETTING ADC RESULT ADS1115
+[  792.917486] ads1015 1-0048: [TEST ERR] GETTING ADC RESULT ADS1115
+[  921.792834] [1400] ti_ads1015:393: ads1015 1-0048: [TEST DBG] GETTING ADC RESULT ADS1115
+[  921.792841] ads1015 1-0048: [TEST WRN] GETTING ADC RESULT ADS1115
+[  921.792844] ads1015 1-0048: [TEST ERR] GETTING ADC RESULT ADS1115
+
+$ echo "file ti-ads1015.c -pmlt" | sudo tee /sys/kernel/debug/dynamic_debug/control
+file ti-ads1015.c -pmlt
+
+$ cat /sys/kernel/debug/dynamic_debug/control | grep -i ads
+drivers/media/mc/mc-entity.c:738 [mc]media_pipeline_populate =_ "media pipeline populated, found pads:\n"
+drivers/media/mc/mc-entity.c:671 [mc]media_pipeline_explore_next_link =_ "media pipeline: adding unconnected pads of '%s'\n"
+drivers/iio/adc/ti-ads1015.c:393 [ti_ads1015]ads1015_get_adc_result =_ "[TEST DBG] GETTING ADC RESULT ADS1115\n"
+
+$ dmesg
+[  663.855965] ads1015 1-0048: [TEST WRN] GETTING ADC RESULT ADS1115
+[  663.855972] ads1015 1-0048: [TEST ERR] GETTING ADC RESULT ADS1115
+[  792.917476] ads1015 1-0048: [TEST DBG] GETTING ADC RESULT ADS1115
+[  792.917483] ads1015 1-0048: [TEST WRN] GETTING ADC RESULT ADS1115
+[  792.917486] ads1015 1-0048: [TEST ERR] GETTING ADC RESULT ADS1115
+[  921.792834] [1400] ti_ads1015:393: ads1015 1-0048: [TEST DBG] GETTING ADC RESULT ADS1115
+[  921.792841] ads1015 1-0048: [TEST WRN] GETTING ADC RESULT ADS1115
+[  921.792844] ads1015 1-0048: [TEST ERR] GETTING ADC RESULT ADS1115
+[ 1066.444073] ads1015 1-0048: [TEST WRN] GETTING ADC RESULT ADS1115
+[ 1066.444079] ads1015 1-0048: [TEST ERR] GETTING ADC RESULT ADS1115
+
+
+
