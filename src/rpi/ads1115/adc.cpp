@@ -2,6 +2,8 @@
 
 #include "sysfs/helpers.hpp"
 #include "sysfs/interfaces/linux/sysfs.hpp"
+#include "trigger/interfaces/linux/oneshot/trigger.hpp"
+#include "trigger/interfaces/linux/periodic/trigger.hpp"
 
 #include <linux/iio/events.h>
 #include <linux/iio/types.h>
@@ -31,6 +33,15 @@ std::filesystem::path iiodevices{"/sys/bus/iio/devices"};
 constexpr uint32_t maxchannels{4};
 constexpr uint32_t triggeredbytes{sizeof(int16_t)};
 constexpr uint32_t eventbytes{sizeof(iio_event_data)};
+
+enum class readtype
+{
+    standard,
+    event_limit,
+    event_window,
+    event_dataready,
+    trigger
+};
 
 static const std::unordered_map<iio_chan_type, std::string> iiochantype = {
     {IIO_VOLTAGE, "voltage"},
@@ -87,42 +98,89 @@ static const std::unordered_map<iio_event_direction, std::string> iioevdir = {
 struct Adc::Handler : public helpers::Observable<AdcData>
 {
   public:
-    explicit Handler(const config_t& config) :
-        device{std::get<0>(config)}, logif{std::get<5>(config)},
+    explicit Handler(const configstd_t& config) :
+        device{std::get<0>(config)}, logif{std::get<3>(config)},
         sysfs{sysfs::Factory::create<Sysfs, configrw_t>(
             {iiodevices / device, logif})},
-        trigger{std::get<4>(config)}, reading{std::get<1>(config)},
-        channel{std::get<2>(config)}, scale{[this]() {
+        channel{std::get<1>(config)}, scale{[this]() {
             std::string scale;
             sysfs->read("in_voltage" + str(channel) + "_scale", scale);
             return std::atof(scale.c_str());
         }()},
-        maxvalue{std::get<3>(config)}
+        maxvalue{std::get<2>(config)}, reading{readtype::standard}
     {
-        switch (reading)
-        {
-            case readtype::standard:
-                break;
-            case readtype::trigger_oneshot:
-                [[fallthrough]];
-            case readtype::trigger_periodic:
-                triggersetup();
-                triggermonitoring();
-                break;
-            case readtype::event_dataready:
-                break;
-            case readtype::event_limit:
-                break;
-            case readtype::event_window:
-                eventsetup();
-                eventmonitoring();
-                break;
-        }
-
-        log(logs::level::info, "Created adc ads1115 [dev/mode/cha/max]: " +
-                                   device + "/" + str((int32_t)reading) + "/" +
-                                   str(channel) + "/" + str(maxvalue));
+        log(logs::level::info,
+            "Created standard adc ads1115 [dev/cha/max]: " + device + "/" +
+                str(channel) + "/" + str(maxvalue));
     }
+
+    explicit Handler(const configtrig_t& config) :
+        device{std::get<0>(config)}, logif{std::get<4>(config)},
+        sysfs{sysfs::Factory::create<Sysfs, configrw_t>(
+            {iiodevices / device, logif})},
+        trigger{[this](auto freq) {
+            if (!freq)
+                return trigger::Factory::create<
+                    trigger::lnx::oneshot::Trigger,
+                    trigger::lnx::oneshot::config_t>({logif});
+            else
+                return trigger::Factory::create<
+                    trigger::lnx::periodic::Trigger,
+                    trigger::lnx::periodic::config_t>({freq, logif});
+        }(std::get<3>(config))},
+        channel{std::get<1>(config)}, scale{[this]() {
+            std::string scale;
+            sysfs->read("in_voltage" + str(channel) + "_scale", scale);
+            return std::atof(scale.c_str());
+        }()},
+        maxvalue{std::get<2>(config)}, reading{readtype::trigger}
+    {
+        triggersetup();
+        triggermonitoring();
+
+        std::string trigname;
+        trigger->name(trigname);
+        log(logs::level::info,
+            "Created triggered adc ads1115 [dev/cha/trig/max]: " + device +
+                "/" + str(channel) + "/" + trigname + "/" + str(maxvalue));
+    }
+
+    // explicit Handler(const config_t& config) :
+    //     device{std::get<0>(config)}, logif{std::get<5>(config)},
+    //     sysfs{sysfs::Factory::create<Sysfs, configrw_t>(
+    //         {iiodevices / device, logif})},
+    //     trigger{std::get<4>(config)}, reading{std::get<1>(config)},
+    //     channel{std::get<2>(config)}, scale{[this]() {
+    //         std::string scale;
+    //         sysfs->read("in_voltage" + str(channel) + "_scale", scale);
+    //         return std::atof(scale.c_str());
+    //     }()},
+    //     maxvalue{std::get<3>(config)}
+    // {
+    //     switch (reading)
+    //     {
+    //         case readtype::standard:
+    //             break;
+    //         case readtype::trigger_oneshot:
+    //             [[fallthrough]];
+    //         case readtype::trigger_periodic:
+    //             triggersetup();
+    //             triggermonitoring();
+    //             break;
+    //         case readtype::event_dataready:
+    //             break;
+    //         case readtype::event_limit:
+    //             break;
+    //         case readtype::event_window:
+    //             eventsetup();
+    //             eventmonitoring();
+    //             break;
+    //     }
+
+    //     log(logs::level::info, "Created adc ads1115 [dev/mode/cha/max]: " +
+    //                                device + "/" + str((int32_t)reading) + "/"
+    //                                + str(channel) + "/" + str(maxvalue));
+    // }
 
     ~Handler()
     {
@@ -130,9 +188,7 @@ struct Adc::Handler : public helpers::Observable<AdcData>
         {
             case readtype::standard:
                 break;
-            case readtype::trigger_oneshot:
-                [[fallthrough]];
-            case readtype::trigger_periodic:
+            case readtype::trigger:
                 running.request_stop();
                 triggerrelease();
                 break;
@@ -196,11 +252,11 @@ struct Adc::Handler : public helpers::Observable<AdcData>
     const std::string device;
     const std::shared_ptr<logs::LogIf> logif;
     const std::shared_ptr<sysfs::SysfsIf> sysfs;
-    std::shared_ptr<trigger::TriggerIf> trigger;
-    const readtype reading;
+    const std::shared_ptr<trigger::TriggerIf> trigger{};
     const uint32_t channel;
     const double scale;
     const double maxvalue;
+    const readtype reading;
     std::future<void> async;
     std::stop_source running;
     const std::chrono::milliseconds monitorinterval{100ms};
@@ -508,8 +564,21 @@ struct Adc::Handler : public helpers::Observable<AdcData>
     }
 };
 
-Adc::Adc(const config_t& config) : handler{std::make_unique<Handler>(config)}
-{}
+Adc::Adc(const config_t& config)
+{
+    handler = std::visit(
+        [](const auto& config) -> decltype(Adc::handler) {
+            if constexpr (!std::is_same<const std::monostate&,
+                                        decltype(config)>())
+            {
+                return std::make_unique<Adc::Handler>(config);
+            }
+            throw std::runtime_error(
+                std::source_location::current().function_name() +
+                "-> config not supported"s);
+        },
+        config);
+}
 Adc::~Adc() = default;
 
 bool Adc::observe(std::shared_ptr<helpers::Observer<AdcData>> obs)

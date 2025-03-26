@@ -2,8 +2,6 @@
 #include "logs/interfaces/console/logs.hpp"
 #include "logs/interfaces/group/logs.hpp"
 #include "logs/interfaces/storage/logs.hpp"
-#include "trigger/interfaces/linux/oneshot/trigger.hpp"
-#include "trigger/interfaces/linux/periodic/trigger.hpp"
 
 #include <iostream>
 
@@ -33,19 +31,19 @@ int main(int argc, char** argv)
                 std::cout << "First scenario -> ADCs standard read\n";
 
                 using namespace adc::rpi::ads1115;
-                auto adc0 = adc::Factory::create<Adc, config_t>(
-                    {device, readtype::standard, channel, maxvalue, {}, logif});
+                auto adc = adc::Factory::create<Adc, configstd_t>(
+                    {device, channel, maxvalue, logif});
 
                 std::cout << "ADCs initiated\n";
                 std::cout << "To read press [enter]" << std::flush;
                 getchar();
 
                 double value{};
-                adc0->read(value);
+                adc->read(value);
                 std::cout << "ADCs voltage: " << value << "\n";
 
                 int percent{};
-                adc0->read(percent);
+                adc->read(percent);
                 std::cout << "ADCs percent: " << percent << "\n";
 
                 std::cout << "To exit press [enter]" << std::flush;
@@ -57,15 +55,9 @@ int main(int argc, char** argv)
                 std::cout
                     << "Second scenario -> ADCs observed @ one shot trigger\n";
 
-                auto trigger =
-                    trigger::Factory::create<trigger::lnx::oneshot::Trigger,
-                                             trigger::lnx::oneshot::config_t>(
-                        {logif});
-
                 using namespace adc::rpi::ads1115;
-                auto adc0 = adc::Factory::create<Adc, config_t>(
-                    {device, readtype::trigger_oneshot, channel, maxvalue,
-                     trigger, logif});
+                auto adc = adc::Factory::create<Adc, configtrig_t>(
+                    {device, channel, maxvalue, {}, logif});
 
                 auto readingfunc = helpers::Observer<adc::AdcData>::create(
                     [](const adc::AdcData& data) {
@@ -75,17 +67,17 @@ int main(int argc, char** argv)
                                   << "/" << perc << std::endl;
                     });
 
-                adc0->observe(readingfunc);
+                adc->observe(readingfunc);
 
                 std::cout << "ADCs initiated, to trigger press [enter]"
                           << std::flush;
                 getchar();
 
-                adc0->trigger(0);
+                adc->trigger(0);
                 usleep(100 * 1000);
 
-                adc0->unobserve(readingfunc);
-                adc0->trigger(0);
+                adc->unobserve(readingfunc);
+                adc->trigger(0);
 
                 std::cout << "To exit press [enter]" << std::flush;
                 getchar();
@@ -96,15 +88,9 @@ int main(int argc, char** argv)
                 std::cout
                     << "Third scenario -> ADCs observed @ periodic trigger\n";
 
-                auto trigger =
-                    trigger::Factory::create<trigger::lnx::periodic::Trigger,
-                                             trigger::lnx::periodic::config_t>(
-                        {freq, logif});
-
                 using namespace adc::rpi::ads1115;
-                auto adc0 = adc::Factory::create<Adc, config_t>(
-                    {device, readtype::trigger_periodic, channel, maxvalue,
-                     trigger, logif});
+                auto adc = adc::Factory::create<Adc, configtrig_t>(
+                    {device, channel, maxvalue, freq, logif});
 
                 auto readingfunc = helpers::Observer<adc::AdcData>::create(
                     [](const adc::AdcData& data) {
@@ -114,7 +100,7 @@ int main(int argc, char** argv)
                                   << "/" << perc << std::endl;
                     });
 
-                adc0->observe(readingfunc);
+                adc->observe(readingfunc);
 
                 std::cout << "ADCs initiated, trigger ongoing, to interrupt "
                              "press [enter]"
@@ -122,35 +108,35 @@ int main(int argc, char** argv)
                 getchar();
                 std::cout << "Third scenario DONE -> ADCs released\n";
             }
-            {
-                std::cout
-                    << "Forth scenario -> ADCs observed @ window events\n";
+            // {
+            //     std::cout
+            //         << "Forth scenario -> ADCs observed @ window events\n";
 
-                using namespace adc::rpi::ads1115;
-                auto adc0 =
-                    adc::Factory::create<Adc, config_t>({device,
-                                                         readtype::event_window,
-                                                         channel,
-                                                         maxvalue,
-                                                         {},
-                                                         logif});
+            //     using namespace adc::rpi::ads1115;
+            //     auto adc0 =
+            //         adc::Factory::create<Adc, config_t>({device,
+            //                                              readtype::event_window,
+            //                                              channel,
+            //                                              maxvalue,
+            //                                              {},
+            //                                              logif});
 
-                std::cout << "ADCs initiated, now... waiting for events\n";
+            //     std::cout << "ADCs initiated, now... waiting for events\n";
 
-                auto readingfunc = helpers::Observer<adc::AdcData>::create(
-                    [](const adc::AdcData& data) {
-                        auto [volt, perc] = std::get<1>(data);
-                        std::cout << "Observer of cha: " << std::get<0>(data)
-                                  << " got data voltage/percent: " << volt
-                                  << "/" << perc << std::endl;
-                    });
-                adc0->observe(readingfunc);
+            //     auto readingfunc = helpers::Observer<adc::AdcData>::create(
+            //         [](const adc::AdcData& data) {
+            //             auto [volt, perc] = std::get<1>(data);
+            //             std::cout << "Observer of cha: " << std::get<0>(data)
+            //                       << " got data voltage/percent: " << volt
+            //                       << "/" << perc << std::endl;
+            //         });
+            //     adc0->observe(readingfunc);
 
-                std::cout << "To exit press [enter]" << std::flush;
-                getchar();
+            //     std::cout << "To exit press [enter]" << std::flush;
+            //     getchar();
 
-                std::cout << "Forth scenario DONE -> ADCs released\n";
-            }
+            //     std::cout << "Forth scenario DONE -> ADCs released\n";
+            // }
         }
     }
     catch (std::exception& err)

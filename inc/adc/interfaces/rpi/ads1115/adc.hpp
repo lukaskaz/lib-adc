@@ -2,28 +2,26 @@
 
 #include "adc/factory.hpp"
 #include "logs/interfaces/logs.hpp"
-#include "trigger/interfaces/trigger.hpp"
 
 #include <cstdint>
 #include <tuple>
-#include <vector>
+#include <variant>
 
 namespace adc::rpi::ads1115
 {
 
-enum class readtype
-{
-    standard,
-    event_limit,
-    event_window,
-    event_dataready,
-    trigger_oneshot,
-    trigger_periodic
-};
+using configstd_t =
+    std::tuple<std::string, uint32_t, double, std::shared_ptr<logs::LogIf>>;
+using configtrig_t = std::tuple<std::string, uint32_t, double, double,
+                                std::shared_ptr<logs::LogIf>>;
+using configevt_t = std::tuple<std::string, uint32_t, double, double, double,
+                               std::shared_ptr<logs::LogIf>>;
 
-using config_t = std::tuple<std::string, readtype, uint32_t, double,
-                            std::shared_ptr<trigger::TriggerIf>,
-                            std::shared_ptr<logs::LogIf>>;
+using config_t = std::variant<std::monostate, configstd_t, configtrig_t>;
+
+// using config_t = std::tuple<std::string, readtype, uint32_t, double,
+//                             std::shared_ptr<trigger::TriggerIf>,
+//                             std::shared_ptr<logs::LogIf>>;
 
 class Adc : public AdcIf
 {
