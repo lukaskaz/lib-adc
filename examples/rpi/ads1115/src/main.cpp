@@ -40,13 +40,11 @@ int main(int argc, char** argv)
                 std::cout << "To read press [enter]" << std::flush;
                 getchar();
 
-                double value{};
-                adc->read(value);
-                std::cout << "ADCs voltage: " << value << "\n";
-
-                int percent{};
-                adc->read(percent);
-                std::cout << "ADCs percent: " << percent << "\n";
+                adc::AdcData data;
+                adc->read(data);
+                std::cout << "ADCs direct read voltage/percent: "
+                          << std::get<0>(data) << "/" << std::get<1>(data)
+                          << "\n";
 
                 std::cout << "To exit press [enter]" << std::flush;
                 getchar();
@@ -61,8 +59,8 @@ int main(int argc, char** argv)
                 auto adc = adc::Factory::create<Adc, configtrig_t>(
                     {device, channel, maxvalue, {}, logif});
 
-                auto readingfunc = helpers::Observer<adc::AdcData>::create(
-                    [](const adc::AdcData& data) {
+                auto readingfunc = helpers::Observer<adc::ObsData>::create(
+                    [](const adc::ObsData& data) {
                         auto [volt, perc] = std::get<1>(data);
                         std::cout << "Observer of cha: " << std::get<0>(data)
                                   << " got data voltage/percent: " << volt
@@ -75,10 +73,10 @@ int main(int argc, char** argv)
                           << std::flush;
                 getchar();
 
-                adc->trigger(0);
+                adc->trigger();
                 usleep(std::chrono::microseconds(100ms).count());
                 adc->unobserve(readingfunc);
-                adc->trigger(0);
+                adc->trigger();
 
                 std::cout << "To exit press [enter]" << std::flush;
                 getchar();
@@ -93,12 +91,13 @@ int main(int argc, char** argv)
                 auto adc = adc::Factory::create<Adc, configtrig_t>(
                     {device, channel, maxvalue, freq, logif});
 
-                auto readingfunc = helpers::Observer<adc::AdcData>::create(
-                    [](const adc::AdcData& data) {
+                auto readingfunc = helpers::Observer<adc::ObsData>::create(
+                    [](const adc::ObsData& data) {
                         auto [volt, perc] = std::get<1>(data);
                         std::cout << "Observer of cha: " << std::get<0>(data)
-                                  << " got data voltage/percent: " << volt
-                                  << "/" << perc << std::endl;
+                                  << " got data voltage/percent: "
+                                  << helpers::fp::trim(volt, 3) << "/" << perc
+                                  << std::endl;
                     });
 
                 adc->observe(readingfunc);
@@ -119,12 +118,13 @@ int main(int argc, char** argv)
 
                 std::cout << "ADCs initiated, now... waiting for events\n";
 
-                auto readingfunc = helpers::Observer<adc::AdcData>::create(
-                    [](const adc::AdcData& data) {
+                auto readingfunc = helpers::Observer<adc::ObsData>::create(
+                    [](const adc::ObsData& data) {
                         auto [volt, perc] = std::get<1>(data);
                         std::cout << "Observer of cha: " << std::get<0>(data)
-                                  << " got data voltage/percent: " << volt
-                                  << "/" << perc << std::endl;
+                                  << " got data voltage/percent: "
+                                  << helpers::fp::trim(volt, 3) << "/" << perc
+                                  << std::endl;
                     });
                 adc->observe(readingfunc);
 
@@ -142,12 +142,13 @@ int main(int argc, char** argv)
 
                 std::cout << "ADCs initiated, now... waiting for events\n";
 
-                auto readingfunc = helpers::Observer<adc::AdcData>::create(
-                    [](const adc::AdcData& data) {
+                auto readingfunc = helpers::Observer<adc::ObsData>::create(
+                    [](const adc::ObsData& data) {
                         auto [volt, perc] = std::get<1>(data);
                         std::cout << "Observer of cha: " << std::get<0>(data)
-                                  << " got data voltage/percent: " << volt
-                                  << "/" << perc << std::endl;
+                                  << " got data voltage/percent: "
+                                  << helpers::fp::trim(volt, 3) << "/" << perc
+                                  << std::endl;
                     });
                 adc->observe(readingfunc);
 
@@ -166,12 +167,13 @@ int main(int argc, char** argv)
 
                 std::cout << "ADCs initiated, now... waiting for events\n";
 
-                auto readingfunc = helpers::Observer<adc::AdcData>::create(
-                    [](const adc::AdcData& data) {
+                auto readingfunc = helpers::Observer<adc::ObsData>::create(
+                    [](const adc::ObsData& data) {
                         auto [volt, perc] = std::get<1>(data);
                         std::cout << "Observer of cha: " << std::get<0>(data)
-                                  << " got data voltage/percent: " << volt
-                                  << "/" << perc << std::endl;
+                                  << " got data voltage/percent: "
+                                  << helpers::fp::trim(volt, 3) << "/" << perc
+                                  << std::endl;
                     });
                 adc->observe(readingfunc);
 

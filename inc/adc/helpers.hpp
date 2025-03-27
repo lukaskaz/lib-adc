@@ -85,4 +85,9 @@ inline auto pow(T base, uint32_t exp, T res = 1) -> T
 }
 } // namespace tr
 
+namespace fp
+{
+double trim(double, uint32_t);
+} // namespace fp
+
 } // namespace helpers
