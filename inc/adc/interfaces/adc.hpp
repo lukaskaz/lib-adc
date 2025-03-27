@@ -8,17 +8,17 @@
 namespace adc
 {
 
-using AdcData = std::tuple<uint32_t, std::pair<double, int32_t>>;
+using AdcData = std::pair<double, int32_t>;
+using ObsData = std::tuple<uint32_t, AdcData>;
 
 class AdcIf
 {
   public:
     virtual ~AdcIf() = default;
-    virtual bool observe(std::shared_ptr<helpers::Observer<AdcData>>) = 0;
-    virtual bool unobserve(std::shared_ptr<helpers::Observer<AdcData>>) = 0;
-    virtual bool trigger(uint32_t) = 0;
-    virtual bool read(double&) = 0;
-    virtual bool read(int32_t&) = 0;
+    virtual bool observe(std::shared_ptr<helpers::Observer<ObsData>>) = 0;
+    virtual bool unobserve(std::shared_ptr<helpers::Observer<ObsData>>) = 0;
+    virtual bool trigger() = 0;
+    virtual bool read(AdcData&) = 0;
 };
 
 } // namespace adc

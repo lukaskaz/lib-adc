@@ -24,11 +24,10 @@ class Adc : public AdcIf
 {
   public:
     ~Adc();
-    bool observe(std::shared_ptr<helpers::Observer<AdcData>>) override;
-    bool unobserve(std::shared_ptr<helpers::Observer<AdcData>>) override;
-    bool trigger(uint32_t) override;
-    bool read(double&) override;
-    bool read(int32_t&) override;
+    bool observe(std::shared_ptr<helpers::Observer<ObsData>>) override;
+    bool unobserve(std::shared_ptr<helpers::Observer<ObsData>>) override;
+    bool trigger() override;
+    bool read(AdcData&) override;
 
   private:
     friend class adc::Factory;

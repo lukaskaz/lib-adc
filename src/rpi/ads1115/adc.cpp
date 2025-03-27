@@ -93,7 +93,7 @@ static const std::unordered_map<iio_event_direction, std::string> iioevdir = {
     {IIO_EV_DIR_DOUBLETAP, "doubletap"},
 };
 
-struct Adc::Handler : public helpers::Observable<AdcData>
+struct Adc::Handler : public helpers::Observable<ObsData>
 {
   public:
     explicit Handler(const configstd_t& config) :
@@ -203,7 +203,7 @@ struct Adc::Handler : public helpers::Observable<AdcData>
                                    device + "/" + str(channel));
     }
 
-    bool observe(std::shared_ptr<helpers::Observer<AdcData>> obs)
+    bool observe(std::shared_ptr<helpers::Observer<ObsData>> obs)
     {
         std::ostringstream oss;
         oss << std::hex << obs.get();
@@ -213,7 +213,7 @@ struct Adc::Handler : public helpers::Observable<AdcData>
         return true;
     }
 
-    bool unobserve(std::shared_ptr<helpers::Observer<AdcData>> obs)
+    bool unobserve(std::shared_ptr<helpers::Observer<ObsData>> obs)
     {
         std::ostringstream oss;
         oss << std::hex << obs.get();
@@ -223,24 +223,18 @@ struct Adc::Handler : public helpers::Observable<AdcData>
         return true;
     }
 
-    bool runtrigger([[maybe_unused]] uint32_t channel) const
+    bool runtrigger() const
     {
         return trigger->run();
     }
 
-    bool read(double& val)
+    bool read(AdcData& data)
     {
-        val = getreadout(channel);
-        log(logs::level::debug,
-            "Cha[" + str(channel) + "] value read: " + str(val));
-        return true;
-    }
-
-    bool read(int32_t& perc)
-    {
-        perc = getpercent(getreadout(channel));
-        log(logs::level::debug,
-            "Cha[" + str(channel) + "] percent read: " + str(perc));
+        auto volt{getvoltage()};
+        data = {volt, getpercent(volt)};
+        log(logs::level::debug, "Cha[" + str(channel) +
+                                    "] adc read: " + str(std::get<0>(data)) +
+                                    "/" + str(std::get<1>(data)));
         return true;
     }
 
@@ -301,11 +295,11 @@ struct Adc::Handler : public helpers::Observable<AdcData>
         auto fallingvalue{"in_voltage" + str(channel) +
                           "_thresh_falling_value"};
         sysfs->elevwrite(iiodevices / device / "events" / fallingvalue,
-                         str(getraw(fallthresh)));
+                         str(getrawfromvolt(fallthresh)));
 
         auto risingvalue{"in_voltage" + str(channel) + "_thresh_rising_value"};
         sysfs->elevwrite(iiodevices / device / "events" / risingvalue,
-                         str(getraw(risethresh)));
+                         str(getrawfromvolt(risethresh)));
 
         auto enablevalue{"in_voltage" + str(channel) + "_thresh_either_en"};
         sysfs->elevwrite(iiodevices / device / "events" / enablevalue, str(1));
@@ -332,7 +326,7 @@ struct Adc::Handler : public helpers::Observable<AdcData>
     {
         auto risingvalue{"in_voltage" + str(channel) + "_thresh_rising_value"};
         sysfs->elevwrite(iiodevices / device / "events" / risingvalue,
-                         str(getraw(thresh)));
+                         str(getrawfromvolt(thresh)));
 
         auto enablevalue{"in_voltage" + str(channel) + "_thresh_rising_en"};
         sysfs->elevwrite(iiodevices / device / "events" / enablevalue, str(1));
@@ -501,7 +495,7 @@ struct Adc::Handler : public helpers::Observable<AdcData>
         if (readbytes == triggeredbytes)
         {
             auto raw = (int16_t)((((int16_t)data[1] << 8) & 0xFF00) | data[0]);
-            auto val = std::max(0., (double)raw), volt = getvalue(val, 3);
+            auto val = std::max(0., (double)raw), volt = getvoltfromraw(val);
             return std::make_pair(volt, getpercent(volt));
         }
         return {};
@@ -532,30 +526,27 @@ struct Adc::Handler : public helpers::Observable<AdcData>
                 (dir == IIO_EV_DIR_RISING || dir == IIO_EV_DIR_EITHER))
             {
                 log(logs::level::debug, "Exposing adc values @ event");
-                auto volt = getreadout(channel, 4);
+                auto volt = getvoltage();
                 return std::make_pair(volt, getpercent(volt));
             }
         }
         return {};
     }
 
-    double getreadout(uint32_t channel, uint32_t prec = 2) const
+    double getvoltage() const
     {
         std::string raw;
         sysfs->read("in_voltage" + str(channel) + "_raw", raw);
-        return getvalue(std::atof(raw.c_str()), prec);
+        return getvoltfromraw(std::atof(raw.c_str()));
     }
 
-    double getvalue(double raw, uint32_t prec) const
+    double getvoltfromraw(double raw) const
     {
         raw = std::max(0., raw);
-        auto value = raw * scale / 1000.;
-        auto ratio = helpers::tr::pow(10, prec);
-        auto volt = std::round(ratio * value) / ratio;
-
+        auto voltage = raw * scale / 1000.;
         log(logs::level::debug,
-            "Calculated voltage: " + str(raw) + " -> " + str(volt));
-        return volt;
+            "Calculated voltage: " + str(raw) + " -> " + str(voltage));
+        return voltage;
     }
 
     int32_t getpercent(double value) const
@@ -568,7 +559,7 @@ struct Adc::Handler : public helpers::Observable<AdcData>
         return perc;
     }
 
-    int32_t getraw(double volt) const
+    int32_t getrawfromvolt(double volt) const
     {
         auto raw = (int32_t)std::round(volt * 1000. / scale);
 
@@ -611,29 +602,24 @@ Adc::Adc(const config_t& config)
 }
 Adc::~Adc() = default;
 
-bool Adc::observe(std::shared_ptr<helpers::Observer<AdcData>> obs)
+bool Adc::observe(std::shared_ptr<helpers::Observer<ObsData>> obs)
 {
     return handler->observe(obs);
 }
 
-bool Adc::unobserve(std::shared_ptr<helpers::Observer<AdcData>> obs)
+bool Adc::unobserve(std::shared_ptr<helpers::Observer<ObsData>> obs)
 {
     return handler->unobserve(obs);
 }
 
-bool Adc::trigger(uint32_t channel)
+bool Adc::trigger()
 {
-    return handler->runtrigger(channel);
+    return handler->runtrigger();
 }
 
-bool Adc::read(double& val)
+bool Adc::read(AdcData& data)
 {
-    return handler->read(val);
-}
-
-bool Adc::read(int32_t& val)
-{
-    return handler->read(val);
+    return handler->read(data);
 }
 
 } // namespace adc::rpi::ads1115
